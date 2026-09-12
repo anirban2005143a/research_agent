@@ -17,33 +17,92 @@ Research Agent is a Python-only, research-focused assistant. It investigates que
 
 ## Architecture
 
-```text
-Streamlit UI
-	|
-	v
-ResearchGraph (LangGraph StateGraph)
-	|
-	+--> scope gate ------> research-only response
-	|
-	+--> HITL clarification (for underspecified questions)
-	|
-	+--> planner ----------> focused research questions
-	|
-	+--> tool-call builder -> LangGraph ToolNode
-	|                           +--> DuckDuckGo web search
-	|                           +--> Wikipedia
-	|                           +--> ArXiv
-	|
-	+--> optional Chroma RAG
-	|       +--> recursive chunking
-	|       +--> local BGE-M3 embeddings
-	|       +--> dense retrieval + lexical overlap fusion
-	|       +--> score ranking
-	|
-	+--> grounded draft --> parsed quality review --> revision loop
+### Request routing
+
+```mermaid
+flowchart TD
+	UI[Streamlit UI] --> INVOKE[ResearchGraph.invoke]
+	INVOKE --> SCOPE[LLM Scope Gate]
+	SCOPE -->|out_of_scope| SCOPE_REPLY[Warm scope response]
+	SCOPE -->|answerable| DIRECT[Direct model answer]
+	SCOPE -->|needs_research| LENGTH{Question underspecified?}
+	LENGTH -->|yes| HITL[Human clarification interrupt]
+	HITL --> PLANNER[Planner]
+	LENGTH -->|no| PLANNER
+	PLANNER --> AGENT[Research agent with tool schemas]
+	AGENT --> ROUTER{Tool calls requested?}
+	ROUTER -->|no| SYNTHESIS[Hybrid synthesis]
+	ROUTER -->|yes| TOOLS[LangGraph ToolNode]
+	TOOLS --> ROUND{More evidence needed?}
+	ROUND -->|yes, max 3 rounds| AGENT
+	ROUND -->|no| SYNTHESIS
+	SYNTHESIS --> REVIEW[Quality review]
+	REVIEW -->|needs improvement| REVISE[Revision]
+	REVISE --> REVIEW
+	REVIEW -->|approved or limit reached| ANSWER[Cited final response]
 ```
 
-The LLM-backed scope gate classifies each request as `out_of_scope`, `answerable`, or `needs_research`. Out-of-scope requests use a natural scope response; answerable research questions use a direct model answer; evidence-dependent questions route to clarification when needed, then planning, tool selection, source collection, drafting, critique, and revision.
+### Tool and knowledge layers
+
+```mermaid
+flowchart LR
+	AGENT[LLM tool selection] --> NODE[LangGraph ToolNode]
+	NODE --> WEB[DuckDuckGo web search]
+	NODE --> WIKI[Wikipedia search]
+	NODE --> ARXIV[ArXiv paper search]
+	NODE --> RAGTOOL[rag_search]
+	NODE --> FILETOOL[read_stored_file]
+	RAGTOOL --> RAG[Session HybridRAG]
+	FILETOOL --> REG[Session document registry]
+	RAG --> CHROMA[(LangChain Chroma collection)]
+	RAG --> BGE[Local BAAI/bge-m3 embeddings]
+	RAG --> FUSION[Dense + lexical retrieval\nRRF ranking + source diversity]
+	REG --> FILES[(documents/session_id)]
+	WEB --> EVIDENCE[Evidence records]
+	WIKI --> EVIDENCE
+	ARXIV --> EVIDENCE
+	FUSION --> EVIDENCE
+	FILES --> EVIDENCE
+```
+
+### Research orchestration sequence
+
+```mermaid
+sequenceDiagram
+	participant User
+	participant UI as Streamlit UI
+	participant Graph as LangGraph
+	participant Model as Hugging Face ChatHuggingFace
+	participant Tools as ToolNode
+	participant Sources as Web / Wikipedia / ArXiv / RAG
+
+	User->>UI: Submit research question
+	UI->>Graph: invoke(query, session_id)
+	Graph->>Model: Classify scope and evidence need
+	Model-->>Graph: out_of_scope, answerable, or needs_research
+	alt needs_research
+		Graph->>Model: Generate focused research plan
+		Model-->>Graph: Plan subquestions
+		loop Up to three tool rounds
+			Graph->>Model: Select tools and pass query arguments
+			Model-->>Graph: One or more tool calls
+			Graph->>Tools: Execute calls in parallelizable ToolNode batch
+			Tools->>Sources: Search or retrieve evidence
+			Sources-->>Tools: Source content and metadata
+			Tools-->>Graph: ToolMessage results
+		end
+		Graph->>Model: Synthesize model knowledge and evidence
+		Model-->>Graph: Draft with citations
+		Graph->>Model: Critique and optionally revise
+	else answerable
+		Graph->>Model: Answer from general knowledge
+		Model-->>Graph: Direct answer
+	end
+	Graph-->>UI: Final response and safe progress events
+	UI-->>User: Render response and citations
+```
+
+The LLM-backed scope gate classifies each request as `out_of_scope`, `answerable`, or `needs_research`. Out-of-scope requests receive a natural scope response; answerable research questions use a direct model answer; evidence-dependent questions route to clarification when needed, then planning, model-directed tool selection, source collection, hybrid synthesis, critique, and revision.
 
 Each Streamlit session receives a UUID. Original uploads are preserved under `documents/<session_id>/`, the document registry is stored there, and the LangChain Chroma vector store is persisted under `.chroma/<session_id>/`. Starting a new session creates a new namespace and does not delete older session data.
 
