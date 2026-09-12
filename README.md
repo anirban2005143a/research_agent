@@ -115,10 +115,11 @@ Open `http://localhost:8501`. `BAAI/bge-m3` runs locally through `HuggingFaceEmb
 2. Answerable questions can receive a direct response without tools; evidence-dependent questions continue through research.
 3. Short or vague research questions generate a human clarification request.
 4. The planner creates focused search questions using a repairable Pydantic schema.
-5. The model selects the necessary tools from typed descriptions, including local RAG and specific-file reading, and `ToolNode` executes them.
+5. The model selects zero, one, or several tools. Multiple calls in one response are executed together by LangGraph `ToolNode`; the agent may continue for up to three tool rounds.
 6. Uploaded documents are normalized, split with overlap, deduplicated, embedded locally, persisted in Chroma, and retrieved with dense plus lexical reciprocal-rank fusion.
-7. The analyst drafts a formatted response with inline citations, a Sources section, and explicit missing-evidence statements.
-8. A quality reviewer checks unsupported claims, balance, citations, and directness; the graph revises when needed.
+7. The analyst performs hybrid synthesis: stable model knowledge supplies background, while RAG and tool evidence verify claims that need external support.
+8. The analyst drafts a formatted response with inline citations, a Sources section, and explicit missing-evidence statements.
+9. A quality reviewer checks unsupported claims, balance, citations, and directness; the graph revises when needed.
 
 Wikipedia and ArXiv are explicit typed tools. The planner creates a focused subquestion, the model places it in the tool call's `query` argument, and the terminal prints that exact argument before the LangChain provider executes the search.
 

@@ -235,8 +235,8 @@ class ResearchGraph:
                     }
                 )
         context = list(sources)
-        if self.rag:
-            context.extend(self.rag.retrieve(state["query"]))
+        rag_used = any(source.get("source") == "rag_search" for source in sources)
+        log(f"SOURCES | rag_used={rag_used}")
         log(f"SOURCES | external={len(sources)} | total_evidence={len(context)}")
         return {"sources": sources, "retrieved_context": context}
 
