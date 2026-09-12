@@ -2,6 +2,8 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_classic.output_parsers import OutputFixingParser
 from pydantic import BaseModel, Field
 
+from .config import settings
+
 
 class ResearchPlan(BaseModel):
     steps: list[str] = Field(description="Ordered research steps, each phrased as a focused question")
@@ -22,4 +24,4 @@ class QualityReview(BaseModel):
 
 def fixing_parser(model: type[BaseModel], llm):
     parser = PydanticOutputParser(pydantic_object=model)
-    return OutputFixingParser.from_llm(parser=parser, llm=llm, max_retries=3)
+    return OutputFixingParser.from_llm(parser=parser, llm=llm, max_retries=settings.max_retries)

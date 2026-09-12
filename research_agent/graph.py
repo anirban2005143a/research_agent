@@ -25,7 +25,7 @@ from .prompts.research import (
 from .state import ResearchState
 from .tools import build_research_tools
 from .config import settings
-from .observability import log
+from .observability import log, retry_call
 
 
 def log_node(function):
@@ -310,7 +310,7 @@ class ResearchGraph:
         log(f"LLM {label} | throttle_sleep={settings.llm_call_delay_seconds}s")
         time.sleep(settings.llm_call_delay_seconds)
         started = time.perf_counter()
-        response = (model or self.llm).invoke(messages)
+        response = retry_call(lambda: (model or self.llm).invoke(messages), label)
         log(f"LLM {label} | response_time={time.perf_counter() - started:.2f}s | response_chars={len(str(getattr(response, 'content', response)))}")
         return response
 

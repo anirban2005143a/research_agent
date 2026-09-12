@@ -147,6 +147,7 @@ HF_PROVIDER=auto
 LLM_MAX_NEW_TOKENS=1024
 LLM_TEMPERATURE=0.1
 LLM_CALL_DELAY_SECONDS=20
+MAX_RETRIES=3
 CHROMA_DIR=.chroma
 DOCUMENTS_DIR=documents
 RAG_CHUNK_SIZE=900
@@ -158,6 +159,8 @@ MAX_RESEARCH_ITERATIONS=2
 Replace only the placeholder token in `.env`. Do not commit a real token. `LLM_CALL_DELAY_SECONDS` is applied with `time.sleep()` immediately before each explicit model call in the graph, keeping throttling outside the model object.
 
 The chat client accepts `HUGGINGFACEHUB_API_TOKEN1` through `HUGGINGFACEHUB_API_TOKEN5` or `HF_TOKEN1` through `HF_TOKEN5`. Configured values are deduplicated and selected round-robin for separate Hugging Face chat calls. Embeddings remain local and do not consume these tokens. If a token is exposed, revoke it and create a replacement before using the application again.
+
+`MAX_RETRIES` is the single retry limit for hosted model calls, output-parser repair, and research tools. Retries use short exponential backoff and are capped by this value.
 
 ## Setup and run
 

@@ -33,6 +33,7 @@ class Settings:
     llm_max_new_tokens: int = int(os.getenv("LLM_MAX_NEW_TOKENS", "1024"))
     llm_temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.1"))
     llm_call_delay_seconds: int = int(os.getenv("LLM_CALL_DELAY_SECONDS", "20"))
+    max_retries: int = int(os.getenv("MAX_RETRIES", "3"))
     chroma_dir: str = os.getenv("CHROMA_DIR", ".chroma")
     documents_dir: str = os.getenv("DOCUMENTS_DIR", "documents")
     rag_chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "900"))

@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .observability import log, timed
+from .observability import log, retry_call, timed
 from .rag import HybridRAG
 
 
@@ -31,7 +31,7 @@ class QualityInput(BaseModel):
 def _web_search(query: str) -> str:
     log(f"TOOL web_search | query={query!r}")
     with timed("web_search"):
-        results = DDGS().text(query, max_results=5)
+        results = retry_call(lambda: DDGS().text(query, max_results=5), "tool.web_search")
     if not results:
         return "No web sources found. The available external knowledge may not cover this query."
     return "\n\n".join(
@@ -67,7 +67,7 @@ def build_research_tools(rag: HybridRAG) -> list[Any]:
         """Search uploaded and previously stored documents. Use whenever local document evidence may answer the question."""
         log(f"TOOL rag_search | query={query!r}")
         started = time.perf_counter()
-        matches = rag.retrieve(query, k=settings.rag_top_k)
+        matches = retry_call(lambda: rag.retrieve(query, k=settings.rag_top_k), "tool.rag_search")
         log(f"TOOL rag_search | matches={len(matches)} | elapsed={time.perf_counter() - started:.2f}s")
         if not matches:
             return "No matching uploaded-document evidence was found. State this limitation explicitly."
@@ -81,7 +81,7 @@ def build_research_tools(rag: HybridRAG) -> list[Any]:
         """Read a specific uploaded or stored file when the question names it or an excerpt needs verification."""
         log(f"TOOL read_stored_file | source={source_name!r} | query={query!r}")
         with timed("read_stored_file"):
-            return rag.read_file(source_name, query=query)
+            return retry_call(lambda: rag.read_file(source_name, query=query), "tool.read_stored_file")
 
     @tool("list_stored_files")
     def list_stored_files() -> str:
@@ -112,14 +112,14 @@ def build_research_tools(rag: HybridRAG) -> list[Any]:
         """Search Wikipedia for concise background context using this exact topic query."""
         log(f"TOOL wikipedia_search | query={query!r}")
         with timed("wikipedia_search"):
-            return str(wikipedia_backend.invoke(query))
+            return str(retry_call(lambda: wikipedia_backend.invoke(query), "tool.wikipedia_search"))
 
     @tool("arxiv_search", args_schema=QueryInput)
     def arxiv_search(query: str) -> str:
         """Search ArXiv for academic and technical papers using this exact topic query."""
         log(f"TOOL arxiv_search | query={query!r}")
         with timed("arxiv_search"):
-            return str(arxiv_backend.invoke(query))
+            return str(retry_call(lambda: arxiv_backend.invoke(query), "tool.arxiv_search"))
 
     return [
         web_search,
