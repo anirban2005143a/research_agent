@@ -13,7 +13,7 @@ Research Agent is a Python-only, research-focused assistant. It investigates que
 - Improve answer quality with parsing, source grounding, critique, and revision.
 - Preserve short-term conversation context while compressing older turns and extracting user preferences.
 - Pause for human clarification when a research request is underspecified.
-- Show safe high-level progress in Streamlit and detailed node, tool-query, and LLM timing logs in the terminal.
+- Show safe high-level research progress in Streamlit and detailed node, tool-query, and LLM timing logs in the terminal.
 
 ## Architecture
 
@@ -43,7 +43,7 @@ ResearchGraph (LangGraph StateGraph)
 	+--> grounded draft --> parsed quality review --> revision loop
 ```
 
-For research requests, the graph first runs a separate approach node. It produces a short, user-safe approach summary and conditionally sends complex requests to the planner; simple requests can proceed directly to tool selection. This is a task approach summary, not exposed private chain-of-thought. Non-research requests bypass the progress panel and receive the research-only response directly.
+Research requests route from the scope gate to clarification when needed, then to the planner, tool-selection loop, source collection, drafting, critique, and revision. Non-research requests use an LLM-backed scope-response node that can greet the user naturally while explaining the research focus.
 
 Each Streamlit session receives a UUID. Original uploads are preserved under `documents/<session_id>/`, the document registry is stored there, and the LangChain Chroma vector store is persisted under `.chroma/<session_id>/`. Starting a new session creates a new namespace and does not delete older session data.
 
@@ -64,7 +64,7 @@ research-agent/
 |-- README.md
 |-- research_agent/
 	|-- config.py                  Environment-backed Settings object
-	|-- llm.py                     Hugging Face chat model and call throttling
+	|-- llm.py                     Hugging Face chat model construction
 	|-- graph.py                   LangGraph workflow and ToolNode orchestration
 	|-- state.py                   Typed graph state
 	|-- tools.py                   Web, Wikipedia, ArXiv, and quality tools
@@ -112,7 +112,7 @@ Open `http://localhost:8501`. `BAAI/bge-m3` runs locally through `HuggingFaceEmb
 
 ## Research workflow
 
-1. The scope gate rejects normal conversation before model or search work.
+1. The scope gate identifies research intent before planning or search work.
 2. Short or vague research questions generate a human clarification request.
 3. The planner creates focused search questions using a repairable Pydantic schema.
 4. The model selects the necessary tools from typed descriptions, including local RAG and specific-file reading, and `ToolNode` executes them.
