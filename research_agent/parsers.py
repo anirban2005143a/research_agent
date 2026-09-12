@@ -7,6 +7,12 @@ class ResearchPlan(BaseModel):
     steps: list[str] = Field(description="Ordered research steps, each phrased as a focused question")
 
 
+class ScopeDecision(BaseModel):
+    category: str = Field(description="One of: out_of_scope, answerable, needs_research")
+    reason: str = Field(description="Brief reason for the classification")
+    response: str = Field(description="Natural response if out_of_scope; otherwise a brief acknowledgement")
+
+
 class QualityReview(BaseModel):
     score: int = Field(ge=1, le=10)
     issues: list[str] = Field(default_factory=list)

@@ -43,7 +43,7 @@ ResearchGraph (LangGraph StateGraph)
 	+--> grounded draft --> parsed quality review --> revision loop
 ```
 
-Research requests route from the scope gate to clarification when needed, then to the planner, tool-selection loop, source collection, drafting, critique, and revision. Non-research requests use an LLM-backed scope-response node that can greet the user naturally while explaining the research focus.
+The LLM-backed scope gate classifies each request as `out_of_scope`, `answerable`, or `needs_research`. Out-of-scope requests use a natural scope response; answerable research questions use a direct model answer; evidence-dependent questions route to clarification when needed, then planning, tool selection, source collection, drafting, critique, and revision.
 
 Each Streamlit session receives a UUID. Original uploads are preserved under `documents/<session_id>/`, the document registry is stored there, and the LangChain Chroma vector store is persisted under `.chroma/<session_id>/`. Starting a new session creates a new namespace and does not delete older session data.
 
@@ -72,7 +72,6 @@ research-agent/
 	|-- parsers.py                 Pydantic schemas and output-repair parsers
 	|-- prompts/                   Planner, tool-selection, RAG, drafting, critique, and revision prompts
 	|-- memory.py                  Recent turns, preference capture, and compression
-	|-- scope.py                   Research-only policy gate
 ```
 
 ## Configuration
@@ -112,14 +111,14 @@ Open `http://localhost:8501`. `BAAI/bge-m3` runs locally through `HuggingFaceEmb
 
 ## Research workflow
 
-1. The scope gate identifies research intent before planning or search work.
-2. Short or vague research questions generate a human clarification request.
-3. The planner creates focused search questions using a repairable Pydantic schema.
-4. The model selects the necessary tools from typed descriptions, including local RAG and specific-file reading, and `ToolNode` executes them.
-5. Uploaded documents are normalized, split with overlap, deduplicated, embedded locally, persisted in Chroma, and retrieved with dense plus lexical reciprocal-rank fusion.
-6. The analyst drafts a formatted response with inline citations, a Sources section, and explicit missing-evidence statements.
-7. A quality reviewer checks unsupported claims, balance, citations, and directness.
-8. The graph revises once when the reviewer requests more work, bounded by `MAX_RESEARCH_ITERATIONS`.
+1. The LLM scope gate classifies the request before planning or search work.
+2. Answerable questions can receive a direct response without tools; evidence-dependent questions continue through research.
+3. Short or vague research questions generate a human clarification request.
+4. The planner creates focused search questions using a repairable Pydantic schema.
+5. The model selects the necessary tools from typed descriptions, including local RAG and specific-file reading, and `ToolNode` executes them.
+6. Uploaded documents are normalized, split with overlap, deduplicated, embedded locally, persisted in Chroma, and retrieved with dense plus lexical reciprocal-rank fusion.
+7. The analyst drafts a formatted response with inline citations, a Sources section, and explicit missing-evidence statements.
+8. A quality reviewer checks unsupported claims, balance, citations, and directness; the graph revises when needed.
 
 Wikipedia and ArXiv are explicit typed tools. The planner creates a focused subquestion, the model places it in the tool call's `query` argument, and the terminal prints that exact argument before the LangChain provider executes the search.
 

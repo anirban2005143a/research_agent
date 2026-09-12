@@ -10,18 +10,18 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import Command, interrupt
 
 from .llm import build_llm
-from .parsers import QualityReview, ResearchPlan, fixing_parser
+from .parsers import QualityReview, ResearchPlan, ScopeDecision, fixing_parser
 from .prompts.rag import RAG_CONTEXT_LABEL
 from .prompts.research import (
     CRITIQUE_SYSTEM,
     DRAFT_SYSTEM,
+    DIRECT_ANSWER_SYSTEM,
     HITL_QUESTION,
     PLANNER_SYSTEM,
     RESEARCH_AGENT_SYSTEM,
     REVISION_SYSTEM,
     SCOPE_SYSTEM,
 )
-from .scope import classify_query
 from .state import ResearchState
 from .tools import build_research_tools
 from .config import settings
@@ -65,6 +65,7 @@ class ResearchGraph:
         workflow = StateGraph(ResearchState)
         workflow.add_node("scope_gate", self.scope_gate)
         workflow.add_node("scope_response", self.scope_response)
+        workflow.add_node("direct_answer", self.direct_answer)
         workflow.add_node("clarify", self.clarify)
         workflow.add_node("plan", self.plan)
         workflow.add_node("research_agent", self.research_agent)
@@ -77,9 +78,10 @@ class ResearchGraph:
         workflow.add_conditional_edges(
             "scope_gate",
             self.route_scope,
-            {"scope_response": "scope_response", "clarify": "clarify", "plan": "plan", "end": END},
+            {"scope_response": "scope_response", "direct_answer": "direct_answer", "clarify": "clarify", "plan": "plan", "end": END},
         )
         workflow.add_edge("scope_response", END)
+        workflow.add_edge("direct_answer", END)
         workflow.add_conditional_edges(
             "clarify", self.route_clarification, {"plan": "plan", "end": END}
         )
@@ -104,26 +106,40 @@ class ResearchGraph:
 
     @log_node
     def scope_gate(self, state: ResearchState):
-        allowed, reason = classify_query(state.get("query", ""))
-        return {"scope_allowed": allowed, "scope_reason": reason}
+        parser = fixing_parser(ScopeDecision, self.llm)
+        prompt = f"{SCOPE_SYSTEM}\n{parser.get_format_instructions()}\nUser request: {state.get('query', '')}"
+        try:
+            decision = parser.parse(self._invoke_llm("scope_gate_llm", [HumanMessage(content=prompt)]).content)
+            category = decision.category if decision.category in {"out_of_scope", "answerable", "needs_research"} else "needs_research"
+            return {
+                "scope_allowed": category != "out_of_scope",
+                "scope_category": category,
+                "scope_reason": decision.reason,
+                "scope_response": decision.response,
+            }
+        except Exception as exc:
+            log(f"SCOPE_GATE | fallback_to_research | error={exc!r}")
+            return {"scope_allowed": True, "scope_category": "needs_research", "scope_reason": "Scope classification failed; research is safer."}
 
     @log_node
     def scope_response(self, state: ResearchState):
-        prompt = f"{SCOPE_SYSTEM}\nUser request: {state.get('query', '')}"
-        try:
-            response = self._invoke_llm("scope_response_llm", [HumanMessage(content=prompt)])
-            return {"final_answer": str(response.content).strip()}
-        except Exception as exc:
-            log(f"SCOPE_RESPONSE | fallback | error={exc!r}")
-            return {"final_answer": "This assistant is dedicated to research workflows. Please provide a research question."}
+        return {"final_answer": state.get("scope_response", "Please provide a research question.")}
+
+    @log_node
+    def direct_answer(self, state: ResearchState):
+        prompt = f"{DIRECT_ANSWER_SYSTEM}\nUser request: {state.get('query', '')}"
+        response = self._invoke_llm("direct_answer_llm", [HumanMessage(content=prompt)])
+        return {"final_answer": str(response.content).strip()}
 
     def _report(self, message: str) -> None:
         if self.progress_callback:
             self.progress_callback(message)
 
     def route_scope(self, state: ResearchState):
-        if not state.get("scope_allowed"):
+        if state.get("scope_category") == "out_of_scope":
             return "scope_response"
+        if state.get("scope_category") == "answerable":
+            return "direct_answer"
         if len(state.get("query", "").split()) < 5 and not state.get("hitl_answer"):
             return "clarify"
         return "plan"
