@@ -31,7 +31,15 @@ def log_node(function):
     @wraps(function)
     def wrapped(self, state):
         started = time.perf_counter()
-        self._report(f"{function.__name__.replace('_', ' ').title()} in progress")
+        progress_labels = {
+            "plan": "Planning research",
+            "research_agent": "Executing research plan",
+            "draft": "Drafting evidence-based response",
+            "critique": "Checking response quality",
+            "revise": "Improving response",
+        }
+        if function.__name__ in progress_labels:
+            self._report(progress_labels[function.__name__])
         log(f"NODE {function.__name__} | status=started")
         try:
             result = function(self, state)
@@ -168,7 +176,13 @@ class ResearchGraph:
         messages = state.get("messages", [])
         tool_calls = messages[-1].tool_calls if messages else []
         if tool_calls:
-            self._report("Selecting and executing research sources")
+            for call in tool_calls:
+                tool_name = call.get("name", "research tool")
+                query = call.get("args", {}).get("query", "")
+                if query:
+                    self._report(f"Searching {tool_name}: {query}")
+                else:
+                    self._report(f"Using {tool_name}")
             log(f"ROUTER | route=execute_tools | calls={len(tool_calls)}")
             return "execute_tools"
         log("ROUTER | route=collect_sources | calls=0")

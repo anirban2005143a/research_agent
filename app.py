@@ -84,10 +84,14 @@ if question:
     with st.chat_message("user"):
         st.markdown(question)
     with st.chat_message("assistant"):
-        with st.status("Preparing research...", expanded=True) as progress:
+        with st.status("Progress", expanded=True) as progress:
+            shown_progress = set()
+
             def show_progress(message: str) -> None:
+                if message in shown_progress:
+                    return
+                shown_progress.add(message)
                 progress.write(message)
-                progress.update(label=message, state="running")
 
             try:
                 if st.session_state.graph is None:
@@ -110,7 +114,7 @@ if question:
                 answer = f"Unable to start the research agent: {exc}"
                 progress.update(label="Research failed", state="error")
             else:
-                progress.update(label="Research complete", state="complete")
+                progress.update(label="Research progress", state="complete")
         st.markdown(answer)
         st.session_state.memory.add("assistant", answer)
 
@@ -119,10 +123,14 @@ if st.session_state.pending_question:
     clarification = st.text_input("Clarify the research scope", key="clarification")
     if st.button("Continue research") and clarification:
         st.session_state.pending_question = ""
-        with st.status("Continuing research...", expanded=True) as progress:
+        with st.status("Progress", expanded=True) as progress:
+            shown_progress = set()
+
             def show_progress(message: str) -> None:
+                if message in shown_progress:
+                    return
+                shown_progress.add(message)
                 progress.write(message)
-                progress.update(label=message, state="running")
 
             result = st.session_state.graph.invoke(
                 st.session_state.pending_query,
@@ -131,7 +139,7 @@ if st.session_state.pending_question:
                 memory_context=st.session_state.memory.context(),
                 progress_callback=show_progress,
             )
-            progress.update(label="Research complete", state="complete")
+            progress.update(label="Research progress", state="complete")
             st.session_state.memory.add("assistant", result["final_answer"])
             st.session_state.pending_query = ""
             st.rerun()
