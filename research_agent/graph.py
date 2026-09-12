@@ -10,18 +10,19 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import Command, interrupt
 
 from .llm import build_llm
-from .parsers import QualityReview, ResearchPlan, fixing_parser
+from .parsers import QualityReview, ResearchPlan, ThinkingDecision, fixing_parser
 from .prompts.rag import RAG_CONTEXT_LABEL
 from .prompts.research import (
     CRITIQUE_SYSTEM,
-    APPROACH_SYSTEM,
     DRAFT_SYSTEM,
     HITL_QUESTION,
     PLANNER_SYSTEM,
     RESEARCH_AGENT_SYSTEM,
     REVISION_SYSTEM,
+    SCOPE_SYSTEM,
+    THINKING_SYSTEM,
 )
-from .scope import RESEARCH_ONLY_REPLY, classify_query
+from .scope import classify_query
 from .state import ResearchState
 from .tools import build_research_tools
 from .config import settings
@@ -38,7 +39,7 @@ def log_node(function):
             "draft": "Drafting evidence-based response",
             "critique": "Checking response quality",
             "revise": "Improving response",
-            "approach": "Thinking about research approach",
+            "thinking": "Thinking about research approach",
         }
         if function.__name__ in progress_labels:
             self._report(progress_labels[function.__name__])
@@ -65,8 +66,9 @@ class ResearchGraph:
     def _build(self):
         workflow = StateGraph(ResearchState)
         workflow.add_node("scope_gate", self.scope_gate)
+        workflow.add_node("scope_response", self.scope_response)
         workflow.add_node("clarify", self.clarify)
-        workflow.add_node("approach", self.approach)
+        workflow.add_node("thinking", self.thinking)
         workflow.add_node("plan", self.plan)
         workflow.add_node("research_agent", self.research_agent)
         workflow.add_node("execute_tools", self.tool_node)
@@ -78,13 +80,14 @@ class ResearchGraph:
         workflow.add_conditional_edges(
             "scope_gate",
             self.route_scope,
-            {"clarify": "clarify", "approach": "approach", "end": END},
+            {"scope_response": "scope_response", "clarify": "clarify", "thinking": "thinking", "end": END},
+        )
+        workflow.add_edge("scope_response", END)
+        workflow.add_conditional_edges(
+            "clarify", self.route_clarification, {"thinking": "thinking", "end": END}
         )
         workflow.add_conditional_edges(
-            "clarify", self.route_clarification, {"approach": "approach", "end": END}
-        )
-        workflow.add_conditional_edges(
-            "approach", self.route_approach, {"plan": "plan", "research_agent": "research_agent"}
+            "thinking", self.route_thinking, {"plan": "plan", "research_agent": "research_agent"}
         )
         workflow.add_edge("plan", "research_agent")
         workflow.add_conditional_edges(
@@ -110,16 +113,26 @@ class ResearchGraph:
         allowed, reason = classify_query(state.get("query", ""))
         return {"scope_allowed": allowed, "scope_reason": reason}
 
+    @log_node
+    def scope_response(self, state: ResearchState):
+        prompt = f"{SCOPE_SYSTEM}\nUser request: {state.get('query', '')}"
+        try:
+            response = self._invoke_llm("scope_response_llm", [HumanMessage(content=prompt)])
+            return {"final_answer": str(response.content).strip()}
+        except Exception as exc:
+            log(f"SCOPE_RESPONSE | fallback | error={exc!r}")
+            return {"final_answer": "This assistant is dedicated to research workflows. Please provide a research question."}
+
     def _report(self, message: str) -> None:
         if self.progress_callback:
             self.progress_callback(message)
 
     def route_scope(self, state: ResearchState):
         if not state.get("scope_allowed"):
-            return "end"
+            return "scope_response"
         if len(state.get("query", "").split()) < 5 and not state.get("hitl_answer"):
             return "clarify"
-        return "approach"
+        return "thinking"
 
     @log_node
     def clarify(self, state: ResearchState):
@@ -127,30 +140,30 @@ class ResearchGraph:
         return {"hitl_answer": str(answer), "needs_hitl": False}
 
     def route_clarification(self, state: ResearchState):
-        return "approach" if state.get("hitl_answer") else "end"
+        return "thinking" if state.get("hitl_answer") else "end"
 
     @log_node
-    def approach(self, state: ResearchState):
+    def thinking(self, state: ResearchState):
+        parser = fixing_parser(ThinkingDecision, self.llm)
         prompt = (
-            f"{APPROACH_SYSTEM}\nRequest: {state['query']}\n"
+            f"{THINKING_SYSTEM}\n{parser.get_format_instructions()}\nRequest: {state['query']}\n"
             f"Clarification: {state.get('hitl_answer', 'none')}"
         )
         try:
-            response = self._invoke_llm("approach_llm", [HumanMessage(content=prompt)])
-            approach = str(response.content).strip()
+            response = self._invoke_llm("thinking_llm", [HumanMessage(content=prompt)])
+            decision = parser.parse(response.content)
+            thinking = decision.summary
+            needs_plan = decision.needs_planner
         except Exception as exc:
-            log(f"APPROACH | fallback | error={exc!r}")
-            approach = "Use authoritative sources, relevant research papers, and local documents if available."
-        needs_plan = len(state.get("query", "").split()) >= 12 or any(
-            marker in state.get("query", "").lower()
-            for marker in ("compare", "literature", "deep", "implementation", "multiple")
-        )
-        log(f"APPROACH | needs_planner={needs_plan} | summary={approach!r}")
-        self._report(f"Thinking: {approach}")
-        return {"approach": approach, "approach_needed": needs_plan}
+            log(f"THINKING | fallback | error={exc!r}")
+            thinking = "Use authoritative sources, relevant research papers, and local documents if available."
+            needs_plan = True
+        log(f"THINKING | needs_planner={needs_plan} | summary={thinking!r}")
+        self._report(f"Thinking: {thinking}")
+        return {"thinking_summary": thinking, "thinking_needed": needs_plan}
 
-    def route_approach(self, state: ResearchState):
-        return "plan" if state.get("approach_needed", True) else "research_agent"
+    def route_thinking(self, state: ResearchState):
+        return "plan" if state.get("thinking_needed", True) else "research_agent"
 
     @log_node
     def plan(self, state: ResearchState):
@@ -187,7 +200,7 @@ class ResearchGraph:
                     f"Research request: {state['query']}\nResearch plan:\n{plan}\n"
                     f"User preferences: {memory.get('preferences', {})}\n"
                     f"Prior context summary: {memory.get('summary', '')}\n"
-                    f"Approach: {state.get('approach', '')}"
+                    f"Thinking summary: {state.get('thinking_summary', '')}"
                 )
             ),
         ]
@@ -344,7 +357,7 @@ class ResearchGraph:
             result["hitl_question"] = result["__interrupt__"][0].value["question"]
             result["final_answer"] = result["hitl_question"]
         elif not result.get("scope_allowed"):
-            result["final_answer"] = RESEARCH_ONLY_REPLY
+            result["final_answer"] = result.get("final_answer", "")
         else:
             result["final_answer"] = result.get("draft", "No answer was produced.")
         return result

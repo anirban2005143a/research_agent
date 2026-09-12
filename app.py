@@ -7,7 +7,6 @@ import streamlit as st
 from research_agent.graph import ResearchGraph
 from research_agent.memory import ShortTermMemory
 from research_agent.rag import HybridRAG, load_uploaded_file
-from research_agent.scope import RESEARCH_ONLY_REPLY, classify_query
 
 st.set_page_config(page_title="Research Agent", page_icon="R", layout="wide")
 st.title("Research Agent")
@@ -84,39 +83,35 @@ if question:
     st.session_state.memory.add("user", question)
     with st.chat_message("user"):
         st.markdown(question)
-    allowed, _ = classify_query(question)
-    if not allowed:
-        answer = RESEARCH_ONLY_REPLY
-    else:
-        with st.status("Thinking", expanded=True) as progress:
-            shown_progress = set()
+    with st.status("Thinking", expanded=True) as progress:
+        shown_progress = set()
 
-            def show_progress(message: str) -> None:
-                if message in shown_progress:
-                    return
-                shown_progress.add(message)
-                progress.write(message)
+        def show_progress(message: str) -> None:
+            if message in shown_progress:
+                return
+            shown_progress.add(message)
+            progress.write(message)
 
-            try:
-                if st.session_state.graph is None:
-                    st.session_state.graph = ResearchGraph(
-                        rag=st.session_state.rag,
-                        progress_callback=show_progress,
-                    )
-                result = st.session_state.graph.invoke(
-                    question,
-                    messages=st.session_state.memory.messages,
-                    thread_id=st.session_state.thread_id,
-                    memory_context=st.session_state.memory.context(),
+        try:
+            if st.session_state.graph is None:
+                st.session_state.graph = ResearchGraph(
+                    rag=st.session_state.rag,
                     progress_callback=show_progress,
                 )
-                if result.get("needs_hitl") and not result.get("hitl_answer"):
-                    st.session_state.pending_question = result["hitl_question"]
-                    st.session_state.pending_query = question
-                answer = result["final_answer"]
-            except Exception as exc:
-                answer = f"Unable to start the research agent: {exc}"
-                progress.update(label="Research failed", state="error")
+            result = st.session_state.graph.invoke(
+                question,
+                messages=st.session_state.memory.messages,
+                thread_id=st.session_state.thread_id,
+                memory_context=st.session_state.memory.context(),
+                progress_callback=show_progress,
+            )
+            if result.get("needs_hitl") and not result.get("hitl_answer"):
+                st.session_state.pending_question = result["hitl_question"]
+                st.session_state.pending_query = question
+            answer = result["final_answer"]
+        except Exception as exc:
+            answer = f"Unable to start the research agent: {exc}"
+            progress.update(label="Research failed", state="error")
     with st.chat_message("assistant"):
         st.markdown(answer)
     st.session_state.memory.add("assistant", answer)

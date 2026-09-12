@@ -5,13 +5,6 @@ RESEARCH_TERMS = {
     "history", "policy", "technology", "trend", "data", "pros and cons", "state of the art",
 }
 
-RESEARCH_ONLY_REPLY = (
-    "I am a research-oriented agent. I can help investigate a topic, compare evidence, "
-    "summarize sources, analyze uploaded documents, and produce a cited research brief. "
-    "Please ask a research question or request an evidence-based analysis."
-)
-
-
 def classify_query(query: str) -> tuple[bool, str]:
     normalized = query.lower().strip()
     if not normalized:

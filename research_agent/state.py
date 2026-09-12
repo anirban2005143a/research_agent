@@ -12,8 +12,8 @@ class ResearchState(TypedDict, total=False):
     memory_context: dict[str, Any]
     scope_allowed: bool
     scope_reason: str
-    approach: str
-    approach_needed: bool
+    thinking_summary: str
+    thinking_needed: bool
     plan: list[str]
     current_step: int
     sources: list[dict[str, Any]]
