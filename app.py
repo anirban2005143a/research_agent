@@ -7,6 +7,7 @@ import streamlit as st
 from research_agent.graph import ResearchGraph
 from research_agent.memory import ShortTermMemory
 from research_agent.rag import HybridRAG, load_uploaded_file
+from research_agent.scope import RESEARCH_ONLY_REPLY, classify_query
 
 st.set_page_config(page_title="Research Agent", page_icon="R", layout="wide")
 st.title("Research Agent")
@@ -83,8 +84,11 @@ if question:
     st.session_state.memory.add("user", question)
     with st.chat_message("user"):
         st.markdown(question)
-    with st.chat_message("assistant"):
-        with st.status("Progress", expanded=True) as progress:
+    allowed, _ = classify_query(question)
+    if not allowed:
+        answer = RESEARCH_ONLY_REPLY
+    else:
+        with st.status("Thinking", expanded=True) as progress:
             shown_progress = set()
 
             def show_progress(message: str) -> None:
@@ -113,17 +117,16 @@ if question:
             except Exception as exc:
                 answer = f"Unable to start the research agent: {exc}"
                 progress.update(label="Research failed", state="error")
-            else:
-                progress.update(label="Research progress", state="complete")
+    with st.chat_message("assistant"):
         st.markdown(answer)
-        st.session_state.memory.add("assistant", answer)
+    st.session_state.memory.add("assistant", answer)
 
 if st.session_state.pending_question:
     st.warning(st.session_state.pending_question)
     clarification = st.text_input("Clarify the research scope", key="clarification")
     if st.button("Continue research") and clarification:
         st.session_state.pending_question = ""
-        with st.status("Progress", expanded=True) as progress:
+        with st.status("Thinking", expanded=True) as progress:
             shown_progress = set()
 
             def show_progress(message: str) -> None:
@@ -139,7 +142,6 @@ if st.session_state.pending_question:
                 memory_context=st.session_state.memory.context(),
                 progress_callback=show_progress,
             )
-            progress.update(label="Research progress", state="complete")
             st.session_state.memory.add("assistant", result["final_answer"])
             st.session_state.pending_query = ""
             st.rerun()

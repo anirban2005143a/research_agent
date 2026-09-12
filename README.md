@@ -43,6 +43,8 @@ ResearchGraph (LangGraph StateGraph)
 	+--> grounded draft --> parsed quality review --> revision loop
 ```
 
+For research requests, the graph first runs a separate approach node. It produces a short, user-safe approach summary and conditionally sends complex requests to the planner; simple requests can proceed directly to tool selection. This is a task approach summary, not exposed private chain-of-thought. Non-research requests bypass the progress panel and receive the research-only response directly.
+
 Each Streamlit session receives a UUID. Original uploads are preserved under `documents/<session_id>/`, the document registry is stored there, and the LangChain Chroma vector store is persisted under `.chroma/<session_id>/`. Starting a new session creates a new namespace and does not delete older session data.
 
 The graph keeps the research state in `ResearchState` and persists it per thread with LangGraph `MemorySaver`. Tool results use LangChain's standard tool schema and are executed by LangGraph `ToolNode`, allowing the model to select tools through conditional routing. Hugging Face responses are plain text, so planning and critique use `PydanticOutputParser` with `OutputFixingParser` as a recovery layer.

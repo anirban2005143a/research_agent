@@ -14,6 +14,7 @@ from .parsers import QualityReview, ResearchPlan, fixing_parser
 from .prompts.rag import RAG_CONTEXT_LABEL
 from .prompts.research import (
     CRITIQUE_SYSTEM,
+    APPROACH_SYSTEM,
     DRAFT_SYSTEM,
     HITL_QUESTION,
     PLANNER_SYSTEM,
@@ -37,6 +38,7 @@ def log_node(function):
             "draft": "Drafting evidence-based response",
             "critique": "Checking response quality",
             "revise": "Improving response",
+            "approach": "Thinking about research approach",
         }
         if function.__name__ in progress_labels:
             self._report(progress_labels[function.__name__])
@@ -64,6 +66,7 @@ class ResearchGraph:
         workflow = StateGraph(ResearchState)
         workflow.add_node("scope_gate", self.scope_gate)
         workflow.add_node("clarify", self.clarify)
+        workflow.add_node("approach", self.approach)
         workflow.add_node("plan", self.plan)
         workflow.add_node("research_agent", self.research_agent)
         workflow.add_node("execute_tools", self.tool_node)
@@ -75,10 +78,13 @@ class ResearchGraph:
         workflow.add_conditional_edges(
             "scope_gate",
             self.route_scope,
-            {"clarify": "clarify", "plan": "plan", "end": END},
+            {"clarify": "clarify", "approach": "approach", "end": END},
         )
         workflow.add_conditional_edges(
-            "clarify", self.route_clarification, {"plan": "plan", "end": END}
+            "clarify", self.route_clarification, {"approach": "approach", "end": END}
+        )
+        workflow.add_conditional_edges(
+            "approach", self.route_approach, {"plan": "plan", "research_agent": "research_agent"}
         )
         workflow.add_edge("plan", "research_agent")
         workflow.add_conditional_edges(
@@ -113,7 +119,7 @@ class ResearchGraph:
             return "end"
         if len(state.get("query", "").split()) < 5 and not state.get("hitl_answer"):
             return "clarify"
-        return "plan"
+        return "approach"
 
     @log_node
     def clarify(self, state: ResearchState):
@@ -121,7 +127,30 @@ class ResearchGraph:
         return {"hitl_answer": str(answer), "needs_hitl": False}
 
     def route_clarification(self, state: ResearchState):
-        return "plan" if state.get("hitl_answer") else "end"
+        return "approach" if state.get("hitl_answer") else "end"
+
+    @log_node
+    def approach(self, state: ResearchState):
+        prompt = (
+            f"{APPROACH_SYSTEM}\nRequest: {state['query']}\n"
+            f"Clarification: {state.get('hitl_answer', 'none')}"
+        )
+        try:
+            response = self._invoke_llm("approach_llm", [HumanMessage(content=prompt)])
+            approach = str(response.content).strip()
+        except Exception as exc:
+            log(f"APPROACH | fallback | error={exc!r}")
+            approach = "Use authoritative sources, relevant research papers, and local documents if available."
+        needs_plan = len(state.get("query", "").split()) >= 12 or any(
+            marker in state.get("query", "").lower()
+            for marker in ("compare", "literature", "deep", "implementation", "multiple")
+        )
+        log(f"APPROACH | needs_planner={needs_plan} | summary={approach!r}")
+        self._report(f"Thinking: {approach}")
+        return {"approach": approach, "approach_needed": needs_plan}
+
+    def route_approach(self, state: ResearchState):
+        return "plan" if state.get("approach_needed", True) else "research_agent"
 
     @log_node
     def plan(self, state: ResearchState):
@@ -157,7 +186,8 @@ class ResearchGraph:
                 content=(
                     f"Research request: {state['query']}\nResearch plan:\n{plan}\n"
                     f"User preferences: {memory.get('preferences', {})}\n"
-                    f"Prior context summary: {memory.get('summary', '')}"
+                    f"Prior context summary: {memory.get('summary', '')}\n"
+                    f"Approach: {state.get('approach', '')}"
                 )
             ),
         ]
