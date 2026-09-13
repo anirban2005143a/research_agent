@@ -40,6 +40,10 @@ class Settings:
     rag_chunk_overlap: int = int(os.getenv("RAG_CHUNK_OVERLAP", "140"))
     rag_embedding_batch_size: int = int(os.getenv("RAG_EMBEDDING_BATCH_SIZE", "16"))
     rag_top_k: int = int(os.getenv("RAG_TOP_K", "8"))
+    rag_candidate_multiplier: int = int(os.getenv("RAG_CANDIDATE_MULTIPLIER", "6"))
+    rag_reranker_model_id: str = os.getenv("RAG_RERANKER_MODEL_ID", "BAAI/bge-reranker-v2-m3")
+    rag_reranker_enabled: bool = os.getenv("RAG_RERANKER_ENABLED", "true").lower() == "true"
+    rag_reranker_local_files_only: bool = os.getenv("RAG_RERANKER_LOCAL_FILES_ONLY", "false").lower() == "true"
     max_research_iterations: int = int(os.getenv("MAX_RESEARCH_ITERATIONS", "2"))
 
 

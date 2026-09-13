@@ -1,8 +1,9 @@
 """Document ingestion and hybrid retrieval components."""
 
 from .document_handler import DocumentHandler, SUPPORTED_EXTENSIONS
+from .result_ranker import ResultRanker
 
-__all__ = ["DocumentHandler", "HybridRAG", "SUPPORTED_EXTENSIONS"]
+__all__ = ["DocumentHandler", "HybridRAG", "ResultRanker", "SUPPORTED_EXTENSIONS"]
 
 
 def __getattr__(name: str):

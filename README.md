@@ -130,6 +130,7 @@ research-agent/
 	|-- rag_system/                Standalone document indexing and hybrid retrieval package
 		|-- rag_engine.py          Chroma document storage and hybrid retrieval
 		|-- document_handler.py    File reading, uploads, metadata, listing, and chunk preparation
+		|-- result_ranker.py       RRF fusion, cross-encoder reranking, and source diversity
 		|-- main.py                 Terminal-only RAG inspection entry point
 	|-- parsers.py                 Pydantic schemas and output-repair parsers
 	|-- prompts/                   Planner, tool-selection, RAG, drafting, critique, and revision prompts
@@ -157,6 +158,10 @@ RAG_CHUNK_SIZE=900
 RAG_CHUNK_OVERLAP=140
 RAG_EMBEDDING_BATCH_SIZE=16
 RAG_TOP_K=8
+RAG_CANDIDATE_MULTIPLIER=6
+RAG_RERANKER_MODEL_ID=BAAI/bge-reranker-v2-m3
+RAG_RERANKER_ENABLED=true
+RAG_RERANKER_LOCAL_FILES_ONLY=false
 MAX_RESEARCH_ITERATIONS=2
 ```
 
@@ -172,7 +177,11 @@ then written to Chroma as one serialized operation to avoid concurrent database
 writes. The Streamlit upload status and terminal logs report each stored chunk.
 Chunk metadata includes filename, title, headings, page, author, and year when
 available. Retrieval combines dense similarity with body and metadata matching,
-including lightweight spelling correction for query terms.
+including lightweight spelling correction for query terms. Dense Chroma search
+and lexical scoring run concurrently, their candidates are fused with reciprocal
+rank fusion, and the candidates are reranked locally with the configured
+cross-encoder. Set `RAG_RERANKER_ENABLED=false` for a faster first run or use
+`RAG_RERANKER_LOCAL_FILES_ONLY=true` after downloading the model.
 
 ## Setup and run
 

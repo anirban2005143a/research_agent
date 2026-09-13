@@ -1,8 +1,7 @@
 """Chroma-backed document storage and hybrid retrieval."""
 
 import hashlib
-import re
-from difflib import get_close_matches
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
@@ -13,14 +12,11 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from ..config import settings
 from ..observability import log
 from .document_handler import DocumentHandler
+from .result_ranker import ResultRanker
 
 
 def stable_id(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def tokens(text: str) -> list[str]:
-    return re.findall(r"[\w-]+", text.lower())
 
 
 class HybridRAG:
@@ -45,6 +41,7 @@ class HybridRAG:
             embedding_function=self.embeddings,
             persist_directory=str(self.session_chroma_dir),
         )
+        self.ranker = ResultRanker()
 
     def store_document(
         self,
@@ -93,56 +90,42 @@ class HybridRAG:
         )
         return len(unique_chunks)
 
-    def _stored_documents(self) -> list[Document]:
-        stored = self.vectorstore.get(include=["documents", "metadatas"])
-        return [
-            Document(page_content=content, metadata=metadata or {})
-            for content, metadata in zip(stored.get("documents", []), stored.get("metadatas", []))
-        ]
-
     def retrieve(self, query: str, k: int = 8) -> list[dict[str, Any]]:
-        """Fuse dense, body, metadata, and typo-tolerant rankings."""
-        stored_documents = self._stored_documents()
-        if not stored_documents:
-            return []
-        vocabulary = set()
-        for document in stored_documents:
-            vocabulary.update(tokens(document.page_content))
-            for field in ("filename", "title", "headings", "author", "year"):
-                vocabulary.update(tokens(str(document.metadata.get(field, ""))))
-        corrected_terms: list[str] = []
-        for term in tokens(query):
-            match = get_close_matches(term, vocabulary, n=1, cutoff=0.82)
-            corrected_terms.append(match[0] if match else term)
-        dense_docs = self.vectorstore.similarity_search_with_relevance_scores(" ".join(corrected_terms), k=min(k * 3, 30))
-        terms = set(corrected_terms)
+        """Run bounded dense and lexical retrieval in parallel, then rank results."""
+        candidate_limit = max(k * settings.rag_candidate_multiplier, k)
+        terms = set(query.lower().split())
 
-        def lexical_score(document: Document) -> float:
-            body_score = len(terms & set(tokens(document.page_content))) / max(len(terms), 1)
-            metadata_score = len(terms & set(tokens(" ".join(str(document.metadata.get(field, "")) for field in ("filename", "title", "headings", "author", "year"))))) / max(len(terms), 1)
-            exact_metadata = sum(1 for field in ("filename", "title", "headings", "author", "year") if terms & set(tokens(str(document.metadata.get(field, "")))))
-            return body_score + metadata_score * 3.0 + exact_metadata * 0.5
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            dense_future = executor.submit(
+                self.vectorstore.similarity_search_with_relevance_scores,
+                query,
+                min(candidate_limit, 50),
+            )
+            lexical_future = executor.submit(
+                self._lexical_search,
+                terms,
+                candidate_limit,
+            )
+            dense_docs = dense_future.result()
+            lexical = lexical_future.result()
+        return self.ranker.rank(query, dense_docs, lexical, terms, k)
 
-        lexical = sorted(stored_documents, key=lexical_score, reverse=True)[:min(k * 3, 30)]
-        rankings: dict[str, dict[str, Any]] = {}
-        for rank, (document, dense_score) in enumerate(dense_docs, start=1):
-            chunk_id = document.metadata.get("chunk_id", stable_id(document.page_content))
-            rankings.setdefault(chunk_id, {"document": document, "dense_score": float(dense_score), "lexical_score": 0.0, "rrf": 0.0})
-            rankings[chunk_id]["rrf"] += 1 / (60 + rank)
-        for rank, document in enumerate(lexical, start=1):
-            chunk_id = document.metadata.get("chunk_id", stable_id(document.page_content))
-            rankings.setdefault(chunk_id, {"document": document, "dense_score": 0.0, "lexical_score": 0.0, "rrf": 0.0})
-            rankings[chunk_id]["lexical_score"] = lexical_score(document)
-            rankings[chunk_id]["rrf"] += 1 / (60 + rank)
-        selected: list[dict[str, Any]] = []
-        per_source: dict[str, int] = {}
-        for item in sorted(rankings.values(), key=lambda value: value["rrf"], reverse=True):
-            document = item["document"]
-            source = document.metadata.get("source", "uploaded document")
-            if per_source.get(source, 0) >= 3:
-                continue
-            per_source[source] = per_source.get(source, 0) + 1
-            selected.append({"content": document.page_content, "source": source, "page": document.metadata.get("page", "?"), "title": document.metadata.get("title", ""), "headings": document.metadata.get("headings", ""), "chunk_id": document.metadata.get("chunk_id", ""), "score": round(item["rrf"], 6), "dense_score": round(item["dense_score"], 6), "lexical_score": round(item["lexical_score"], 6), "metadata": dict(document.metadata), "citation": f"{source}, page {document.metadata.get('page', '?')}" + (f", section {document.metadata['headings']}" if document.metadata.get("headings") else "")})
-            if len(selected) >= k:
-                break
-        return selected
+    def _lexical_search(self, terms: set[str], limit: int) -> list[Document]:
+        """Use Chroma document filters instead of loading the whole collection."""
+        documents: dict[str, Document] = {}
+        searchable_terms = [term for term in terms if len(term) >= 2]
+
+        def search_term(term: str) -> dict[str, Any]:
+            return self.vectorstore.get(
+                where_document={"$contains": term},
+                limit=limit,
+                include=["documents", "metadatas"],
+            )
+
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(searchable_terms)))) as executor:
+            results = executor.map(search_term, searchable_terms)
+        for result in results:
+            for content, metadata in zip(result.get("documents", []), result.get("metadatas", [])):
+                document = Document(page_content=content, metadata=metadata or {})
+                documents[document.metadata.get("chunk_id", stable_id(content))] = document
+        return sorted(documents.values(), key=lambda document: self.ranker.lexical_score(document, terms), reverse=True)[:limit]
