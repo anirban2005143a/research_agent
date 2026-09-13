@@ -1,4 +1,5 @@
 from datetime import datetime
+import hashlib
 import uuid
 from pathlib import Path
 
@@ -6,7 +7,7 @@ import streamlit as st
 
 from research_agent.graph import ResearchGraph
 from research_agent.memory import ShortTermMemory
-from research_agent.rag import HybridRAG, load_uploaded_file
+from research_agent.rag import HybridRAG
 
 st.set_page_config(page_title="Research Agent", page_icon="R", layout="wide")
 st.title("Research Agent")
@@ -26,6 +27,8 @@ if "pending_query" not in st.session_state:
     st.session_state.pending_query = ""
 if "thread_id" not in st.session_state:
     st.session_state.thread_id = st.session_state.session_id
+if "indexed_uploads" not in st.session_state:
+    st.session_state.indexed_uploads = set()
 
 with st.sidebar:
     st.header("Research workspace")
@@ -38,33 +41,49 @@ with st.sidebar:
         st.session_state.pending_question = ""
         st.session_state.pending_query = ""
         st.session_state.thread_id = st.session_state.session_id
+        st.session_state.indexed_uploads = set()
         st.rerun()
     uploads = st.file_uploader(
         "Upload source documents",
         type=["pdf", "docx", "txt", "md", "markdown", "csv", "json", "html", "htm", "xml", "py", "xlsx", "pptx"],
         accept_multiple_files=True,
     )
-    if st.button("Index uploaded documents", use_container_width=True):
-        count = 0
+    new_uploads = []
+    for uploaded in uploads or []:
+        content = uploaded.getvalue()
+        upload_key = hashlib.sha256(
+            f"{uploaded.name}:{hashlib.sha256(content).hexdigest()}".encode()
+        ).hexdigest()
+        if upload_key not in st.session_state.indexed_uploads:
+            new_uploads.append((uploaded, content, upload_key))
+    if new_uploads:
+        indexed_chunks = 0
         failures = []
-        for uploaded in uploads or []:
-            try:
-                stored_path = st.session_state.rag.save_uploaded_file(
-                    uploaded.name, uploaded.getvalue()
+        with st.status("Processing uploaded documents...", expanded=True) as upload_status:
+            for uploaded, content, upload_key in new_uploads:
+                try:
+                    upload_status.write(f"Saving and parsing `{uploaded.name}`...")
+                    indexed_chunks += st.session_state.rag.index_uploaded_file(
+                        uploaded.name,
+                        content,
+                        file_metadata={
+                            "mime_type": uploaded.type,
+                            "file_size_bytes": uploaded.size,
+                            "uploaded_at": str(datetime.now()),
+                        },
+                    )
+                    st.session_state.indexed_uploads.add(upload_key)
+                    upload_status.write(f"Embedded and stored `{uploaded.name}`.")
+                except Exception as exc:
+                    failures.append(f"{uploaded.name}: {exc}")
+            if failures:
+                upload_status.update(
+                    label="Some documents could not be indexed.", state="error"
                 )
-                count += st.session_state.rag.add_documents(
-                    load_uploaded_file(str(stored_path)),
-                    uploaded.name,
-                    file_metadata={
-                        "mime_type": uploaded.type,
-                        "file_size_bytes": uploaded.size,
-                        "uploaded_at": str(datetime.now()),
-                        "stored_path": str(stored_path),
-                    },
+            else:
+                upload_status.update(
+                    label=f"Documents indexed: {indexed_chunks} chunks.", state="complete"
                 )
-            except Exception as exc:
-                failures.append(f"{uploaded.name}: {exc}")
-        st.success(f"Indexed {count} chunks.")
         for failure in failures:
             st.error(failure)
     st.info("Documents are optional. Web research still runs when no files are uploaded.")

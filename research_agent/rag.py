@@ -17,6 +17,7 @@ from langchain_text_splitters import (
 )
 
 from .config import settings
+from .observability import log
 
 SUPPORTED_EXTENSIONS = {
     ".pdf",
@@ -147,6 +148,10 @@ class HybridRAG:
             ids.append(chunk_hash)
             self.documents[chunk_hash] = chunk
         if unique_chunks:
+            log(
+                f"Embedding and storing {len(unique_chunks)} chunks for "
+                f"{source_name} in {self.session_chroma_dir}"
+            )
             self.vectorstore.add_documents(unique_chunks, ids=ids)
         self.files[source_name] = {
             "source": source_name,
@@ -159,6 +164,27 @@ class HybridRAG:
         }
         self._save_registry()
         return len(unique_chunks)
+
+    def index_uploaded_file(
+        self,
+        file_name: str,
+        content: bytes,
+        file_metadata: dict[str, Any] | None = None,
+    ) -> int:
+        """Save an upload, parse it, and synchronously index its chunks."""
+        log(f"Saving uploaded file {file_name} for session {self.session_id}")
+        stored_path = self.save_uploaded_file(file_name, content)
+        log(f"Parsing uploaded file {stored_path}")
+        documents = load_uploaded_file(str(stored_path))
+        log(f"Parsed {len(documents)} document pages from {stored_path}")
+        return self.add_documents(
+            documents,
+            Path(file_name).name,
+            file_metadata={
+                **(file_metadata or {}),
+                "stored_path": str(stored_path),
+            },
+        )
 
     def save_uploaded_file(self, file_name: str, content: bytes) -> Path:
         """Persist the original upload inside this session's document directory."""

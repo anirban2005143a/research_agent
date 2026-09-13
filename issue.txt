@@ -1,0 +1,18 @@
+1. on upload a pdf , it imediately get uploaded and i guess no embeddings are generated and store , as no logs are there in console , so i want that , when user upload a doc , it shows loading screen , while the doc get parsed and embdded and store in the vector store
+
+2. even the doc is not stored in the /documents folder under that session-id.
+
+3. better chunking and storing with metadata (filename , title , headings of the section), bettern searching instead of semantic and bm25 search . 
+ex: if someone search using author or year or title , which is not sementically match with some chunk . 
+ex: spelling correction also need to handle 
+
+4. need to improve the planner 
+ex: it should plan according to the tools and resourceswe have along with the target to have a good response 
+
+5. needs to check that weather the llm can use multiple tool for a single task or not
+
+6. check how does it reverse or iterate the response generation process
+
+7. i think the docs are not get stored in vector store when uploaded . 
+
+8. needs to mention the sources (url and the external uploaded docs also 'page no if possible')
