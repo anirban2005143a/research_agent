@@ -6,12 +6,14 @@ import re
 from pathlib import Path
 from typing import Any
 
+import pymupdf
 from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, TextLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import HTMLHeaderTextSplitter, RecursiveCharacterTextSplitter
 from openpyxl import load_workbook
 from pptx import Presentation
 from pypdf import PdfReader
+import pymupdf4llm
 
 from ..config import settings
 
@@ -164,6 +166,38 @@ def _find_heading(document: Document) -> str:
     return ""
 
 
+def _pdf_outline_heading_map(doc: pymupdf.Document) -> dict[int, str]:
+    """Map a page number to the nearest section heading from the PDF outline."""
+    headings_by_page: dict[int, str] = {}
+    try:
+        toc = doc.get_toc(simple=False)
+    except Exception:
+        return headings_by_page
+
+    for item in toc:
+        if len(item) < 3:
+            continue
+        level = int(item[0]) if str(item[0]).isdigit() else 1
+        heading_title = str(item[1]).strip()
+        page_number = int(item[2]) if str(item[2]).isdigit() else 0
+        if not heading_title or page_number <= 0:
+            continue
+        headings_by_page[page_number] = heading_title
+
+    ordered_pages = sorted(headings_by_page)
+    resolved: dict[int, str] = {}
+    current_heading = ""
+    for page_number in range(1, doc.page_count + 1):
+        for outline_page in ordered_pages:
+            if outline_page <= page_number:
+                current_heading = headings_by_page[outline_page]
+            else:
+                break
+        if current_heading:
+            resolved[page_number] = current_heading
+    return resolved
+
+
 def _make_metadata(document: Document, file_path: str | Path) -> dict[str, str | list[str]]:
     """Create a concise set of PDF-relevant metadata fields for retrieval."""
     page_number = document.metadata.get("page")
@@ -173,14 +207,14 @@ def _make_metadata(document: Document, file_path: str | Path) -> dict[str, str |
 
     title = pdf_title or title_from_text or (heading_candidates[0] if heading_candidates else "")
     section_heading = heading_candidates[0] if heading_candidates else ""
-    topic_name = title or ""
+    heading = section_heading or title or ""
     authors = _extract_pdf_authors_from_metadata(document)
 
     metadata: dict[str, str | list[str]] = {
         "filename": Path(file_path).name,
         "title": title,
-        "section_heading": section_heading,
-        "topic_name": topic_name,
+        "heading": heading,
+        "section_heading": section_heading or heading,
     }
 
     if authors:
@@ -248,7 +282,14 @@ def _extract_pdf_page_headings(page_text: str) -> list[str]:
 
 
 def _load_pdf_file(path: Path) -> list[Document]:
-    """Parse PDFs using pypdf so we can preserve actual PDF metadata and page numbers."""
+    """Parse PDFs using PyMuPDF + pypdf so section headings and metadata come from the document itself."""
+    markdown_source = ""
+    if pymupdf4llm is not None:
+        try:
+            markdown_source = pymupdf4llm.to_markdown(str(path), use_ocr=False) or ""
+        except Exception:
+            markdown_source = ""
+
     reader = PdfReader(str(path))
     pdf_title = ""
     if reader.metadata:
@@ -263,6 +304,15 @@ def _load_pdf_file(path: Path) -> list[Document]:
         if raw_authors:
             reader_authors = [part.strip() for part in str(raw_authors).split(";") if part.strip()]
 
+    try:
+        doc = pymupdf.open(str(path))
+    except Exception:
+        doc = None
+
+    outline_heading_map: dict[int, str] = {}
+    if doc is not None:
+        outline_heading_map = _pdf_outline_heading_map(doc)
+
     for page_number, page in enumerate(reader.pages, start=1):
         text = page.extract_text() or ""
         cleaned = _clean_text(text)
@@ -270,13 +320,17 @@ def _load_pdf_file(path: Path) -> list[Document]:
             continue
 
         headings = _extract_pdf_page_headings(cleaned)
+        heading = outline_heading_map.get(page_number) or headings[0] if headings else ""
+        if not heading:
+            heading = pdf_title or ""
+
         page_metadata = {
             "source": path.name,
             "page": page_number,
             "page_number": page_number,
             "title": pdf_title,
-            "topic_name": pdf_title,
-            "section_heading": headings[0] if headings else "",
+            "heading": heading,
+            "section_heading": heading,
         }
         if reader_authors:
             page_metadata["authors"] = reader_authors
@@ -285,7 +339,11 @@ def _load_pdf_file(path: Path) -> list[Document]:
     if not documents and reader.metadata:
         fallback = _clean_heading(str(reader.metadata.get("/Title") or reader.metadata.get("title") or ""))
         if fallback:
-            documents.append(Document(page_content=fallback, metadata={"source": path.name, "page": 1, "page_number": 1, "title": fallback, "topic_name": fallback, "section_heading": fallback, "heading": fallback}))
+            documents.append(Document(page_content=fallback, metadata={"source": path.name, "page": 1, "page_number": 1, "title": fallback, "heading": fallback, "section_heading": fallback}))
+
+    # Keep a more structured markdown copy available for downstream processors when needed.
+    if markdown_source and documents:
+        documents[0].metadata["markdown_source"] = markdown_source[:25000]
 
     return documents
 
