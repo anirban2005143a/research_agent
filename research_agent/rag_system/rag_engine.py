@@ -1,6 +1,7 @@
 """Chroma-backed document storage and hybrid retrieval."""
 
 import hashlib
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
@@ -93,7 +94,7 @@ class HybridRAG:
     def retrieve(self, query: str, k: int = 8) -> list[dict[str, Any]]:
         """Run bounded dense and lexical retrieval in parallel, then rank results."""
         candidate_limit = max(k * settings.rag_candidate_multiplier, k)
-        terms = set(query.lower().split())
+        terms = set(re.findall(r"[\w-]+", query.lower()))
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             dense_future = executor.submit(
@@ -128,4 +129,4 @@ class HybridRAG:
             for content, metadata in zip(result.get("documents", []), result.get("metadatas", [])):
                 document = Document(page_content=content, metadata=metadata or {})
                 documents[document.metadata.get("chunk_id", stable_id(content))] = document
-        return sorted(documents.values(), key=lambda document: self.ranker.lexical_score(document, terms), reverse=True)[:limit]
+        return list(documents.values())[:limit]

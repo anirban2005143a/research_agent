@@ -162,6 +162,9 @@ RAG_CANDIDATE_MULTIPLIER=6
 RAG_RERANKER_MODEL_ID=BAAI/bge-reranker-v2-m3
 RAG_RERANKER_ENABLED=true
 RAG_RERANKER_LOCAL_FILES_ONLY=false
+RAG_DENSE_WEIGHT=0.35
+RAG_BM25_WEIGHT=0.25
+RAG_CROSS_ENCODER_WEIGHT=0.40
 MAX_RESEARCH_ITERATIONS=2
 ```
 
@@ -182,6 +185,10 @@ and lexical scoring run concurrently, their candidates are fused with reciprocal
 rank fusion, and the candidates are reranked locally with the configured
 cross-encoder. Set `RAG_RERANKER_ENABLED=false` for a faster first run or use
 `RAG_RERANKER_LOCAL_FILES_ONLY=true` after downloading the model.
+The final score is a weighted combination of normalized dense similarity,
+normalized BM25, and normalized cross-encoder scores. The weights are
+configured with `RAG_DENSE_WEIGHT`, `RAG_BM25_WEIGHT`, and
+`RAG_CROSS_ENCODER_WEIGHT`.
 
 ## Setup and run
 

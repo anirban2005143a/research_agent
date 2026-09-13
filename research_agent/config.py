@@ -44,6 +44,9 @@ class Settings:
     rag_reranker_model_id: str = os.getenv("RAG_RERANKER_MODEL_ID", "BAAI/bge-reranker-v2-m3")
     rag_reranker_enabled: bool = os.getenv("RAG_RERANKER_ENABLED", "true").lower() == "true"
     rag_reranker_local_files_only: bool = os.getenv("RAG_RERANKER_LOCAL_FILES_ONLY", "false").lower() == "true"
+    rag_dense_weight: float = float(os.getenv("RAG_DENSE_WEIGHT", "0.35"))
+    rag_bm25_weight: float = float(os.getenv("RAG_BM25_WEIGHT", "0.25"))
+    rag_cross_encoder_weight: float = float(os.getenv("RAG_CROSS_ENCODER_WEIGHT", "0.40"))
     max_research_iterations: int = int(os.getenv("MAX_RESEARCH_ITERATIONS", "2"))
 
 
