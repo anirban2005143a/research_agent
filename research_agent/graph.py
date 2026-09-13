@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from functools import wraps
 from typing import Any
@@ -227,10 +228,15 @@ class ResearchGraph:
         sources = []
         for message in state.get("messages", []):
             if isinstance(message, ToolMessage):
+                content = str(message.content)
+                urls = re.findall(r"https?://[^\s)]+", content)
+                citations = re.findall(r"Citation:\s*([^\n]+)", content)
+                locations = citations or urls
                 sources.append(
                     {
                         "source": message.name or "research tool",
-                        "content": str(message.content),
+                        "content": content,
+                        "locations": locations,
                         "tool_call_id": message.tool_call_id,
                     }
                 )
@@ -244,9 +250,11 @@ class ResearchGraph:
     def draft(self, state: ResearchState):
         evidence_blocks = []
         for index, item in enumerate(state.get("retrieved_context", []), start=1):
+            locations = item.get("locations", [])
+            location = "; ".join(locations) or item.get("source", "")
             evidence_blocks.append(
                 f"[{index}] Source: {item.get('source', '')}\n"
-                f"Location: {item.get('citation', item.get('source', ''))}\n"
+                f"Location: {location}\n"
                 f"Content: {item.get('content', '')}"
             )
         context = "\n\n--- EVIDENCE ---\n".join(evidence_blocks)

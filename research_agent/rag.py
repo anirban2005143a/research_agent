@@ -246,7 +246,13 @@ class HybridRAG:
         return destination
 
     def list_files(self) -> list[dict[str, Any]]:
-        return list(self.files.values())
+        unique_files: dict[str, dict[str, Any]] = {}
+        for item in self.files.values():
+            source = str(item.get("source", "")).strip()
+            if not source:
+                continue
+            unique_files.setdefault(source.casefold(), item)
+        return sorted(unique_files.values(), key=lambda item: item["source"].casefold())
 
     def read_file(
         self, source_name: str, query: str = "", max_chars: int = 12000
