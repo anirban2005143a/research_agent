@@ -7,7 +7,7 @@ import streamlit as st
 
 from research_agent.graph import ResearchGraph
 from research_agent.memory import ShortTermMemory
-from research_agent.rag import HybridRAG
+from research_agent.rag_system import DocumentHandler, HybridRAG
 
 st.set_page_config(page_title="Research Agent", page_icon="R", layout="wide")
 st.title("Research Agent")
@@ -18,7 +18,14 @@ if "memory" not in st.session_state:
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
 if "rag" not in st.session_state:
-    st.session_state.rag = HybridRAG(session_id=st.session_state.session_id)
+    st.session_state.document_handler = DocumentHandler(
+        Path("documents") / st.session_state.session_id,
+        session_id=st.session_state.session_id,
+    )
+    st.session_state.rag = HybridRAG(
+        session_id=st.session_state.session_id,
+        document_handler=st.session_state.document_handler,
+    )
 if "graph" not in st.session_state:
     st.session_state.graph = None
 if "pending_question" not in st.session_state:
@@ -36,7 +43,14 @@ with st.sidebar:
     if st.button("Start new session", use_container_width=True):
         st.session_state.session_id = str(uuid.uuid4())
         st.session_state.memory = ShortTermMemory(recent_limit=5)
-        st.session_state.rag = HybridRAG(session_id=st.session_state.session_id)
+        st.session_state.document_handler = DocumentHandler(
+            Path("documents") / st.session_state.session_id,
+            session_id=st.session_state.session_id,
+        )
+        st.session_state.rag = HybridRAG(
+            session_id=st.session_state.session_id,
+            document_handler=st.session_state.document_handler,
+        )
         st.session_state.graph = None
         st.session_state.pending_question = ""
         st.session_state.pending_query = ""
@@ -70,9 +84,11 @@ with st.sidebar:
                             text=f"Embedding and storing chunk {done}/{total}: {source}",
                         )
 
-                    indexed_chunks += st.session_state.rag.index_uploaded_file(
-                        uploaded.name,
-                        content,
+                    stored_path = st.session_state.document_handler.save_upload(
+                        uploaded.name, content
+                    )
+                    indexed_chunks += st.session_state.rag.store_document(
+                        stored_path,
                         file_metadata={
                             "mime_type": uploaded.type,
                             "file_size_bytes": uploaded.size,
@@ -95,7 +111,7 @@ with st.sidebar:
         for failure in failures:
             st.error(failure)
     st.info("Documents are optional. Web research still runs when no files are uploaded.")
-    stored_files = st.session_state.rag.list_files()
+    stored_files = st.session_state.document_handler.list_files()
     if stored_files:
         st.caption("Stored files")
         for item in stored_files:
@@ -111,7 +127,10 @@ if question:
     with st.chat_message("user"):
         st.markdown(question)
     if st.session_state.graph is None:
-        st.session_state.graph = ResearchGraph(rag=st.session_state.rag)
+        st.session_state.graph = ResearchGraph(
+            rag=st.session_state.rag,
+            document_handler=st.session_state.document_handler,
+        )
     progress_holder = [None]
     shown_progress = set()
 

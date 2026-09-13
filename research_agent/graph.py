@@ -25,6 +25,7 @@ from .prompts.research import (
 )
 from .state import ResearchState
 from .tools import build_research_tools
+from .rag_system import DocumentHandler
 from .config import settings
 from .observability import log, retry_call
 
@@ -54,11 +55,11 @@ def log_node(function):
 
 
 class ResearchGraph:
-    def __init__(self, rag, llm=None, progress_callback=None):
+    def __init__(self, rag, document_handler: DocumentHandler | None = None, llm=None, progress_callback=None):
         self.rag = rag
         self.llm = llm or build_llm()
         self.progress_callback = progress_callback
-        self.tools = build_research_tools(rag)
+        self.tools = build_research_tools(rag, document_handler=document_handler)
         self.tool_node = ToolNode(self.tools)
         self.graph = self._build().compile(checkpointer=MemorySaver())
 

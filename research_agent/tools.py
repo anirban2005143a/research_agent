@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .observability import log, retry_call, timed
-from .rag import HybridRAG
+from .rag_system import DocumentHandler, HybridRAG
 
 
 class QueryInput(BaseModel):
@@ -54,8 +54,9 @@ def _source_quality_check(source_text: str) -> str:
     return f"Quality signal: {hits}/{len(markers)} credibility markers found. Verify primary sources before strong claims."
 
 
-def build_research_tools(rag: HybridRAG) -> list[Any]:
+def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | None = None) -> list[Any]:
     """Build tools with explicit schemas and access to this session's document store."""
+    document_handler = document_handler or rag.document_handler
 
     @tool("web_search", args_schema=QueryInput)
     def web_search(query: str) -> str:
@@ -81,13 +82,13 @@ def build_research_tools(rag: HybridRAG) -> list[Any]:
         """Read a specific uploaded or stored file when the question names it or an excerpt needs verification."""
         log(f"TOOL read_stored_file | source={source_name!r} | query={query!r}")
         with timed("read_stored_file"):
-            return retry_call(lambda: rag.read_file(source_name, query=query), "tool.read_stored_file")
+            return retry_call(lambda: document_handler.read_stored_file(source_name, query=query), "tool.read_stored_file")
 
     @tool("list_stored_files")
     def list_stored_files() -> str:
         """List uploaded files available to the local knowledge source."""
         log("TOOL list_stored_files")
-        files = rag.list_files()
+        files = document_handler.list_files()
         return (
             "\n".join(
                 f"File: {item['source']} | type: {item.get('file_type', 'unknown')} | "

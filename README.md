@@ -127,7 +127,10 @@ research-agent/
 	|-- graph.py                   LangGraph workflow and ToolNode orchestration
 	|-- state.py                   Typed graph state
 	|-- tools.py                   Web, Wikipedia, ArXiv, and quality tools
-	|-- rag.py                     Loaders, normalization, deduplication, Chroma, hybrid ranking, file registry
+	|-- rag_system/                Standalone document indexing and hybrid retrieval package
+		|-- rag_engine.py          Chroma document storage and hybrid retrieval
+		|-- document_handler.py    File reading, uploads, metadata, listing, and chunk preparation
+		|-- main.py                 Terminal-only RAG inspection entry point
 	|-- parsers.py                 Pydantic schemas and output-repair parsers
 	|-- prompts/                   Planner, tool-selection, RAG, drafting, critique, and revision prompts
 	|-- memory.py                  Recent turns, preference capture, and compression
@@ -179,6 +182,23 @@ including lightweight spelling correction for query terms.
 ```
 
 Open `http://localhost:8501`. `BAAI/bge-m3` runs locally through `HuggingFaceEmbeddings` on CPU and is cached in `.models`; the first run may download model weights, but embedding inference is local and does not use the hosted Hugging Face chat endpoint. Set `EMBEDDING_LOCAL_FILES_ONLY=true` after the model is cached to prevent any later model download attempts. A Hugging Face read token is required only for the hosted Llama chat endpoint.
+
+### Check the RAG system separately
+
+The RAG package can be indexed and queried without starting the research agent:
+
+```powershell
+.\venv\Scripts\python.exe -m research_agent.rag_system.main "what does this document say about pricing?" --input .\documents\sample.pdf --k 5
+```
+
+`--input` accepts one supported file or a directory. The command prints each
+retrieved chunk, its ranking score, citation, chunk ID, and complete metadata.
+The default `rag-cli` session is persistent, so later queries can reuse its
+indexed chunks with `--no-index`:
+
+```powershell
+.\venv\Scripts\python.exe -m research_agent.rag_system.main "pricing changes" --no-index
+```
 
 ## Research workflow
 
