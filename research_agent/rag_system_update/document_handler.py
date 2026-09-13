@@ -164,7 +164,7 @@ def _find_heading(document: Document) -> str:
     return ""
 
 
-def _make_metadata(document: Document, filename: str) -> dict[str, str | list[str]]:
+def _make_metadata(document: Document, file_path: str | Path) -> dict[str, str | list[str]]:
     """Create a concise set of PDF-relevant metadata fields for retrieval."""
     page_number = document.metadata.get("page")
     pdf_title = _extract_pdf_title_from_metadata(document)
@@ -177,12 +177,14 @@ def _make_metadata(document: Document, filename: str) -> dict[str, str | list[st
     authors = _extract_pdf_authors_from_metadata(document)
 
     metadata: dict[str, str | list[str]] = {
-        "filename": Path(filename).name,
+        "filename": Path(file_path).name,
         "title": title,
-        "authors": authors,
         "section_heading": section_heading,
         "topic_name": topic_name,
     }
+
+    if authors:
+        metadata["authors"] = authors
 
     if page_number is not None:
         metadata["page_number"] = str(page_number)
@@ -273,10 +275,11 @@ def _load_pdf_file(path: Path) -> list[Document]:
             "page": page_number,
             "page_number": page_number,
             "title": pdf_title,
-            "authors": reader_authors,
             "topic_name": pdf_title,
             "section_heading": headings[0] if headings else "",
         }
+        if reader_authors:
+            page_metadata["authors"] = reader_authors
         documents.append(Document(page_content=cleaned, metadata=page_metadata))
 
     if not documents and reader.metadata:
@@ -307,27 +310,48 @@ class DocumentHandler:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
-    def save_upload(self, filename: str, content: bytes) -> Path:
-        """Save an upload unless a file with the same name is already present."""
-        destination = self.storage_dir / Path(filename).name
+    def save_upload(self, file_path: str | Path, content: bytes) -> Path:
+        """Persist a file inside the session folder, replacing any prior copy with the same basename."""
+        path = Path(file_path)
+        if path.is_dir():
+            raise ValueError("save_upload expects a file path, not a directory.")
+        destination = self.storage_dir / path.name
         if destination.exists():
-            print(f"[RAG][FILES] Already exists, keeping existing file: {destination.name}")
-            return destination
+            destination.unlink()
+            print(f"[RAG][FILES] Replaced existing file: {destination.name}")
 
         destination.write_bytes(content)
         print(f"[RAG][FILES] Saved: {destination.name}")
         return destination
 
-    def file_exists(self, filename: str) -> bool:
-        return (self.storage_dir / Path(filename).name).exists()
+    def remove_file(self, file_path: str | Path) -> bool:
+        """Delete the stored copy for a file path in the current session folder."""
+        path = Path(file_path)
+        destination = self.storage_dir / path.name
+        if not destination.exists():
+            return False
+        destination.unlink()
+        print(f"[RAG][FILES] Removed: {destination.name}")
+        return True
 
-    def prepare_file(self, path: str | Path, filename: str | None = None) -> list[Document]:
-        """Load, clean, annotate, and split one file."""
-        file_path = Path(path)
-        source_name = filename or file_path.name
+    def file_exists(self, file_path: str | Path) -> bool:
+        return (self.storage_dir / Path(file_path).name).exists()
+
+    def prepare_file(self, file_path: str | Path) -> list[Document]:
+        """Load, clean, annotate, and split one file path only."""
+        path = Path(file_path)
+        if path.is_dir():
+            raise ValueError(
+                "DocumentHandler.prepare_file expects a single file path, not a directory. "
+                "Directory iteration should happen in the test entrypoint."
+            )
+        if not path.exists():
+            raise FileNotFoundError(f"Input file does not exist: {path}")
+
+        source_name = path.name
         print(f"[RAG][DOCUMENT] Reading: {source_name}")
 
-        source_documents = _load_file(file_path)
+        source_documents = _load_file(path)
         prepared: list[Document] = []
 
         for document in source_documents:
@@ -337,7 +361,7 @@ class DocumentHandler:
             prepared.append(
                 Document(
                     page_content=content,
-                    metadata=_make_metadata(document, source_name),
+                    metadata=_make_metadata(document, file_path),
                 )
             )
 
@@ -355,11 +379,11 @@ class DocumentHandler:
         print(f"[RAG][CHUNKING] Created {len(chunks)} chunks from {source_name}")
         return [chunk for chunk in chunks if chunk.page_content]
 
-    def read_stored_file(self, filename: str, max_chars: int = 12000) -> str:
+    def read_stored_file(self, file_path: str | Path, max_chars: int = 12000) -> str:
         """Read the original stored file for non-RAG file inspection."""
-        path = self.storage_dir / Path(filename).name
+        path = self.storage_dir / Path(file_path).name
         if not path.exists():
-            return f"File not found: {filename}"
+            return f"File not found: {file_path}"
 
         documents = _load_file(path)
         return "\n\n".join(document.page_content for document in documents)[:max_chars]

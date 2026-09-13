@@ -58,13 +58,27 @@ class DenseRetriever:
             persist_directory=str(storage),
         )
 
-    def has_file(self, filename: str) -> bool:
-        """Check the Chroma collection directly; no registry or file hash is needed."""
+    def has_file(self, file_path: str | Path) -> bool:
+        """Check the Chroma collection directly by the file basename from the input path."""
+        filename = Path(file_path).name
         result = self.vector_store.get(
             where={"filename": filename},
             include=["metadatas"],
         )
         return bool(result.get("ids"))
+
+    def delete_file(self, file_path: str | Path) -> int:
+        """Delete every chunk in the current session for the basename from the given file path."""
+        filename = Path(file_path).name
+        result = self.vector_store.get(
+            where={"filename": filename},
+            include=["metadatas"],
+        )
+        ids = result.get("ids") or []
+        if ids:
+            self.vector_store.delete(ids=ids)
+            print(f"[RAG][VECTOR STORE] Removed {len(ids)} chunk(s) for: {filename}")
+        return len(ids)
 
     def add_documents(self, chunks: list[Document], batch_size: int) -> None:
         total = len(chunks)

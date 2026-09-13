@@ -258,10 +258,7 @@ def main() -> None:
                     source_name = str(relative_path)
                     break
 
-            rag.store_document(
-                path,
-                source_name=source_name,
-            )
+            rag.store_document(path)
 
         print("\n[RAG] Document indexing complete.")
 

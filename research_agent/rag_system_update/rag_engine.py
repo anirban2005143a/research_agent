@@ -43,19 +43,33 @@ class HybridRAG:
     def store_document(
         self,
         file_path: str | Path,
-        source_name: str | None = None,
-        file_metadata: dict[str, Any] | None = None,
         progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> int:
-        """Index a file once, based only on its filename in the current collection."""
+        """Index a single file path only. Directory expansion belongs in the CLI/test harness."""
         path = Path(file_path)
-        source = source_name or path.name
+        if path.is_dir():
+            raise ValueError(
+                "HybridRAG.store_document expects a single file path, not a directory. "
+                "Use the main/test entrypoint to iterate files from a directory."
+            )
+        if not path.exists():
+            raise FileNotFoundError(f"Input file does not exist: {path}")
 
-        if self.dense_retriever.has_file(Path(source).name):
-            print(f"[RAG][INDEX] Already indexed, skipping: {source}")
-            return 0
+        source = path.name
+        session_path = self.document_handler.storage_dir / source
 
-        chunks = self.document_handler.prepare_file(path, filename=source)
+        if path.resolve() != session_path.resolve():
+            if session_path.exists():
+                print(f"[RAG][INDEX] Replacing prior session copy: {source}")
+                self.document_handler.remove_file(source)
+            self.document_handler.save_upload(source, path.read_bytes())
+            path = session_path
+
+        if self.dense_retriever.has_file(source):
+            print(f"[RAG][INDEX] Replacing existing Chroma entries for: {source}")
+            self.dense_retriever.delete_file(source)
+
+        chunks = self.document_handler.prepare_file(path)
         if not chunks:
             print(f"[RAG][INDEX] No readable text found: {source}")
             return 0
