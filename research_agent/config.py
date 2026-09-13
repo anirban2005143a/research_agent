@@ -38,6 +38,7 @@ class Settings:
     documents_dir: str = os.getenv("DOCUMENTS_DIR", "documents")
     rag_chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "900"))
     rag_chunk_overlap: int = int(os.getenv("RAG_CHUNK_OVERLAP", "140"))
+    rag_embedding_batch_size: int = int(os.getenv("RAG_EMBEDDING_BATCH_SIZE", "16"))
     rag_top_k: int = int(os.getenv("RAG_TOP_K", "8"))
     max_research_iterations: int = int(os.getenv("MAX_RESEARCH_ITERATIONS", "2"))
 

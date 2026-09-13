@@ -1,9 +1,10 @@
 import csv
+from difflib import get_close_matches
 import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from openpyxl import load_workbook
 from pptx import Presentation
@@ -42,6 +43,37 @@ def _stable_id(value: str) -> str:
 
 def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[\w-]+", text.lower())
+
+
+def _document_metadata(document: Document, source_name: str) -> dict[str, Any]:
+    """Extract searchable structural fields before page text is normalized."""
+    metadata = dict(document.metadata)
+    headings: list[str] = []
+    for key, value in metadata.items():
+        if "header" in key.lower() or "heading" in key.lower():
+            if value and str(value) not in headings:
+                headings.append(str(value))
+    for line in document.page_content.splitlines():
+        candidate = line.strip()
+        if candidate.startswith("#"):
+            heading = candidate.lstrip("# ").strip()
+            if heading and heading not in headings:
+                headings.append(heading)
+    title = metadata.get("title") or metadata.get("document_title")
+    if not title:
+        title = Path(source_name).stem.replace("_", " ")
+    metadata.update(
+        {
+            "filename": Path(source_name).name,
+            "title": str(title),
+            "headings": " | ".join(headings),
+        }
+    )
+    return metadata
 
 
 class HybridRAG:
@@ -101,6 +133,7 @@ class HybridRAG:
         documents: list[Document],
         source_name: str,
         file_metadata: dict[str, Any] | None = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> int:
         """Normalize, enrich, split, deduplicate, and persist a document collection."""
         if not documents:
@@ -111,7 +144,7 @@ class HybridRAG:
             content = _normalize_text(document.page_content)
             if not content:
                 continue
-            metadata = dict(document.metadata)
+            metadata = _document_metadata(document, source_name)
             metadata.update(
                 {
                     "source": source_name,
@@ -146,13 +179,30 @@ class HybridRAG:
                 continue
             unique_chunks.append(chunk)
             ids.append(chunk_hash)
-            self.documents[chunk_hash] = chunk
         if unique_chunks:
+            batch_size = max(1, settings.rag_embedding_batch_size)
+            total = len(unique_chunks)
             log(
-                f"Embedding and storing {len(unique_chunks)} chunks for "
-                f"{source_name} in {self.session_chroma_dir}"
+                f"Embedding and storing {total} chunks for {source_name} "
+                f"in batches of {batch_size} in {self.session_chroma_dir}"
             )
-            self.vectorstore.add_documents(unique_chunks, ids=ids)
+            for batch_start in range(0, total, batch_size):
+                batch_end = min(batch_start + batch_size, total)
+                batch_documents = unique_chunks[batch_start:batch_end]
+                batch_ids = ids[batch_start:batch_end]
+                log(
+                    f"Embedding chunks {batch_start + 1}-{batch_end}/{total} "
+                    f"for {source_name}"
+                )
+                self.vectorstore.add_documents(batch_documents, ids=batch_ids)
+                for offset, chunk in enumerate(batch_documents, start=batch_start + 1):
+                    self.documents[chunk.metadata["chunk_id"]] = chunk
+                    log(
+                        f"Stored chunk {offset}/{total} for {source_name} "
+                        f"(page={chunk.metadata.get('page', '?')})"
+                    )
+                    if progress_callback:
+                        progress_callback(offset, total, source_name)
         self.files[source_name] = {
             "source": source_name,
             "session_id": self.session_id,
@@ -170,6 +220,7 @@ class HybridRAG:
         file_name: str,
         content: bytes,
         file_metadata: dict[str, Any] | None = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> int:
         """Save an upload, parse it, and synchronously index its chunks."""
         log(f"Saving uploaded file {file_name} for session {self.session_id}")
@@ -184,6 +235,7 @@ class HybridRAG:
                 **(file_metadata or {}),
                 "stored_path": str(stored_path),
             },
+            progress_callback=progress_callback,
         )
 
     def save_uploaded_file(self, file_name: str, content: bytes) -> Path:
@@ -223,19 +275,46 @@ class HybridRAG:
         return text[:max_chars]
 
     def retrieve(self, query: str, k: int = 8) -> list[dict[str, Any]]:
-        """Fuse vector and lexical rankings, then apply diversity-aware source ranking."""
+        """Fuse dense, body, metadata, and typo-tolerant rankings."""
         if not self.documents:
             return []
+        vocabulary = set()
+        for document in self.documents.values():
+            vocabulary.update(_tokens(document.page_content))
+            for field in ("filename", "title", "headings", "author", "year"):
+                vocabulary.update(_tokens(str(document.metadata.get(field, ""))))
+        corrected_terms = []
+        for term in _tokens(query):
+            match = get_close_matches(term, vocabulary, n=1, cutoff=0.82)
+            corrected_terms.append(match[0] if match else term)
+        corrected_query = " ".join(corrected_terms)
         dense_docs = self.vectorstore.similarity_search_with_relevance_scores(
-            query, k=min(k * 3, 30)
+            corrected_query, k=min(k * 3, 30)
         )
-        terms = set(re.findall(r"\w+", query.lower()))
+        terms = set(corrected_terms)
+
+        def lexical_score(document: Document) -> float:
+            body_terms = set(_tokens(document.page_content))
+            metadata_terms = set(
+                _tokens(
+                    " ".join(
+                        str(document.metadata.get(field, ""))
+                        for field in ("filename", "title", "headings", "author", "year")
+                    )
+                )
+            )
+            body_score = len(terms & body_terms) / max(len(terms), 1)
+            metadata_score = len(terms & metadata_terms) / max(len(terms), 1)
+            exact_metadata = sum(
+                1
+                for field in ("filename", "title", "headings", "author", "year")
+                if terms & set(_tokens(str(document.metadata.get(field, ""))))
+            )
+            return body_score + (metadata_score * 3.0) + (exact_metadata * 0.5)
+
         lexical = sorted(
             self.documents.values(),
-            key=lambda doc: len(
-                terms & set(re.findall(r"\w+", doc.page_content.lower()))
-            )
-            / max(len(terms), 1),
+            key=lexical_score,
             reverse=True,
         )[: min(k * 3, 30)]
         rankings: dict[str, dict[str, Any]] = {}
@@ -257,9 +336,7 @@ class HybridRAG:
                 chunk_id,
                 {"document": doc, "dense_score": 0.0, "lexical_score": 0.0, "rrf": 0.0},
             )
-            rankings[chunk_id]["lexical_score"] = len(
-                terms & set(re.findall(r"\w+", doc.page_content.lower()))
-            ) / max(len(terms), 1)
+            rankings[chunk_id]["lexical_score"] = lexical_score(doc)
             rankings[chunk_id]["rrf"] += 1 / (60 + rank)
         selected: list[dict[str, Any]] = []
         per_source: dict[str, int] = {}
@@ -276,9 +353,14 @@ class HybridRAG:
                     "content": document.page_content,
                     "source": source,
                     "page": document.metadata.get("page", "?"),
+                    "title": document.metadata.get("title", ""),
+                    "headings": document.metadata.get("headings", ""),
                     "chunk_id": document.metadata.get("chunk_id", ""),
                     "score": round(item["rrf"], 6),
-                    "citation": f"{source}, page {document.metadata.get('page', '?')}",
+                    "citation": (
+                        f"{source}, page {document.metadata.get('page', '?')}"
+                        + (f", section {document.metadata['headings']}" if document.metadata.get("headings") else "")
+                    ),
                 }
             )
             if len(selected) >= k:

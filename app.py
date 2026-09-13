@@ -63,6 +63,13 @@ with st.sidebar:
             for uploaded, content, upload_key in new_uploads:
                 try:
                     upload_status.write(f"Saving and parsing `{uploaded.name}`...")
+
+                    def show_chunk_progress(done: int, total: int, source: str) -> None:
+                        upload_status.progress(
+                            done / total,
+                            text=f"Embedding and storing chunk {done}/{total}: {source}",
+                        )
+
                     indexed_chunks += st.session_state.rag.index_uploaded_file(
                         uploaded.name,
                         content,
@@ -71,6 +78,7 @@ with st.sidebar:
                             "file_size_bytes": uploaded.size,
                             "uploaded_at": str(datetime.now()),
                         },
+                        progress_callback=show_chunk_progress,
                     )
                     st.session_state.indexed_uploads.add(upload_key)
                     upload_status.write(f"Embedded and stored `{uploaded.name}`.")
