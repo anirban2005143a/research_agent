@@ -33,17 +33,15 @@ class SearchResults:
         results: list[dict[str, Any]] = []
         for chunk in self.chunks:
             metadata = dict(chunk.document.metadata)
+            metadata["chunk_id"] = chunk.chunk_id
+            metadata["score"] = round(chunk.final_score, 6)
+            metadata["rrf_score"] = round(chunk.rrf_score, 6)
+            metadata["cross_encoder_score"] = round(chunk.cross_encoder_score, 6)
+
             results.append(
                 {
                     "content": chunk.document.page_content,
-                    "filename": metadata.get("filename", ""),
-                    "title": metadata.get("title", ""),
-                    "heading": metadata.get("heading", ""),
-                    "score": round(chunk.final_score, 6),
-                    "rrf_score": round(chunk.rrf_score, 6),
-                    "cross_encoder_score": round(chunk.cross_encoder_score, 6),
                     "metadata": metadata,
-                    "chunk_id": chunk.chunk_id,
                 }
             )
         return results

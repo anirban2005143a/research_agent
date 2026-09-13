@@ -8,26 +8,24 @@ from ..config import settings
 from .data_models import RetrievedChunk
 
 
+_RERANKER_MODEL_ID = getattr(settings, "rag_reranker_model_id", "BAAI/bge-reranker-base")
+_RERANKER_LOCAL_ONLY = getattr(settings, "rag_reranker_local_files_only", False)
+
+print(f"[RAG][RERANKER] Loading model at import: {_RERANKER_MODEL_ID}")
+_CROSS_ENCODER_MODEL = CrossEncoder(
+    _RERANKER_MODEL_ID,
+    max_length=512,
+    local_files_only=_RERANKER_LOCAL_ONLY,
+)
+
+
 class CrossEncoderRanker:
     """Use a cross-encoder only after cheap retrieval has narrowed the search space."""
 
     def __init__(self):
-        self._model: CrossEncoder | None = None
+        self._model: CrossEncoder = _CROSS_ENCODER_MODEL
 
     def _load_model(self) -> CrossEncoder:
-        if self._model is None:
-            model_name = getattr(
-                settings,
-                "rag_reranker_model_id",
-                "BAAI/bge-reranker-base",
-            )
-            local_only = getattr(settings, "rag_reranker_local_files_only", False)
-            print(f"[RAG][RERANKER] Loading model: {model_name}")
-            self._model = CrossEncoder(
-                model_name,
-                max_length=512,
-                local_files_only=local_only,
-            )
         return self._model
 
     def rank(self, query: str, candidates: list[RetrievedChunk]) -> list[RetrievedChunk]:

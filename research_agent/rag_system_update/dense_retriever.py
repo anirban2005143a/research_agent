@@ -1,6 +1,7 @@
 """Dense retrieval backed by Chroma and a local sentence-transformer."""
 
 import re
+import uuid
 from pathlib import Path
 
 from langchain_chroma import Chroma
@@ -11,6 +12,19 @@ from ..config import settings
 from .data_models import RetrievedChunk
 
 
+_EMBEDDING_MODEL_ID = getattr(settings, "rag_embedding_model_id", "BAAI/bge-base-en-v1.5")
+_EMBEDDING_CACHE_DIR = getattr(settings, "embedding_cache_dir", ".models")
+_EMBEDDING_LOCAL_ONLY = getattr(settings, "embedding_local_files_only", False)
+
+print(f"[RAG][EMBEDDING] Loading model at import: {_EMBEDDING_MODEL_ID}")
+_EMBEDDINGS = HuggingFaceEmbeddings(
+    model_name=_EMBEDDING_MODEL_ID,
+    cache_folder=_EMBEDDING_CACHE_DIR,
+    model_kwargs={"device": "cpu", "local_files_only": _EMBEDDING_LOCAL_ONLY},
+    encode_kwargs={"normalize_embeddings": True},
+)
+
+
 def _safe_collection_name(session_id: str) -> str:
     value = re.sub(r"[^a-zA-Z0-9_-]", "_", session_id)
     value = value[:50] or "default"
@@ -19,7 +33,9 @@ def _safe_collection_name(session_id: str) -> str:
 
 def _chunk_id(document: Document) -> str:
     metadata = document.metadata
-    return f"{metadata.get('filename', '')}::{metadata.get('heading', '')}::{document.page_content}"
+    section = metadata.get("section_heading") or metadata.get("heading") or ""
+    filename = metadata.get("filename", "")
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{filename}::{section}::{document.page_content}"))
 
 
 class DenseRetriever:
@@ -27,21 +43,7 @@ class DenseRetriever:
 
     def __init__(self, session_id: str):
         self.session_id = session_id
-        embedding_model = getattr(
-            settings,
-            "rag_embedding_model_id",
-            "BAAI/bge-base-en-v1.5",
-        )
-        cache_dir = getattr(settings, "embedding_cache_dir", ".models")
-        local_only = getattr(settings, "embedding_local_files_only", False)
-
-        print(f"[RAG][EMBEDDING] Model: {embedding_model}")
-        self.embeddings = HuggingFaceEmbeddings(
-            model_name=embedding_model,
-            cache_folder=cache_dir,
-            model_kwargs={"device": "cpu", "local_files_only": local_only},
-            encode_kwargs={"normalize_embeddings": True},
-        )
+        self.embeddings = _EMBEDDINGS
 
         self._storage_dir = Path(getattr(settings, "chroma_dir", ".chroma")) / session_id
         self._storage_dir.mkdir(parents=True, exist_ok=True)
@@ -69,7 +71,7 @@ class DenseRetriever:
         for start in range(0, total, batch_size):
             end = min(start + batch_size, total)
             batch = chunks[start:end]
-            ids = [f"{document.metadata['filename']}::chunk::{start + index}" for index, document in enumerate(batch)]
+            ids = [str(uuid.uuid4()) for _ in batch]
             print(f"[RAG][EMBEDDING] Embedding chunks {start + 1}-{end}/{total}")
             self.vector_store.add_documents(batch, ids=ids)
 

@@ -286,30 +286,31 @@ def main() -> None:
         return
 
     for index, result in enumerate(results, start=1):
+        metadata = result["metadata"]
+        score = metadata.get("score", 0.0)
+        rrf_score = metadata.get("rrf_score", 0.0)
+        cross_encoder_score = metadata.get("cross_encoder_score", 0.0)
+
         print(
             f"\n--- {index} | "
-            f"score={result['score']} | "
-            f"RRF={result['rrf_score']} | "
-            f"CE={result['cross_encoder_score']} ---"
+            f"score={score} | "
+            f"RRF={rrf_score} | "
+            f"CE={cross_encoder_score} ---"
         )
+        print(f"File: {metadata.get('filename', '')}")
+        print(f"Title: {metadata.get('title', '')}")
 
-        print(f"File: {result['filename']}")
-        print(f"Title: {result['title']}")
+        if metadata.get("authors"):
+            print(f"Authors: {metadata['authors']}")
 
-        if result["heading"]:
-            print(f"Heading: {result['heading']}")
+        if metadata.get("section_heading"):
+            print(f"Section: {metadata['section_heading']}")
 
         print("Content:")
         print(result["content"])
 
         print("Metadata:")
-        print(
-            json.dumps(
-                result["metadata"],
-                indent=2,
-                ensure_ascii=False,
-            )
-        )
+        print(json.dumps(metadata, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":

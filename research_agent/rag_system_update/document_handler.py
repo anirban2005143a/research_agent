@@ -11,6 +11,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import HTMLHeaderTextSplitter, RecursiveCharacterTextSplitter
 from openpyxl import load_workbook
 from pptx import Presentation
+from pypdf import PdfReader
 
 from ..config import settings
 
@@ -39,33 +40,157 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
-def _find_heading(document: Document) -> str:
-    """Return the most useful heading already present in loader metadata/text."""
-    for key, value in document.metadata.items():
-        if value and ("header" in key.lower() or "heading" in key.lower()):
-            return str(value).strip()
+def _clean_heading(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip("# -:;\t\n").strip()
 
-    for line in document.page_content.splitlines():
-        line = line.strip()
-        if line.startswith("#"):
-            heading = line.lstrip("# ").strip()
-            if heading:
-                return heading
+
+def _extract_pdf_title_from_metadata(document: Document) -> str:
+    """Prefer actual PDF metadata fields before any fallback heuristics."""
+    for key in ("title", "Title", "document_title", "Document Title", "pdf_title"):
+        value = document.metadata.get(key)
+        if value:
+            cleaned = _clean_heading(str(value))
+            if cleaned:
+                return cleaned
     return ""
 
 
-def _make_metadata(document: Document, filename: str) -> dict[str, str]:
-    """Keep only metadata useful to a research answer."""
-    title = (
-        document.metadata.get("title")
-        or document.metadata.get("document_title")
-        or Path(filename).stem.replace("_", " ")
-    )
-    return {
+def _extract_pdf_authors_from_metadata(document: Document) -> list[str]:
+    """Use the real PDF author metadata when available."""
+    authors_value = document.metadata.get("author") or document.metadata.get("Author") or document.metadata.get("authors")
+    if not authors_value:
+        return []
+
+    if isinstance(authors_value, (list, tuple, set)):
+        values = [str(item).strip() for item in authors_value if str(item).strip()]
+    else:
+        values = [part.strip() for part in str(authors_value).split(";") if part.strip()]
+
+    cleaned = []
+    for value in values:
+        norm = _clean_heading(value)
+        if norm and norm not in cleaned:
+            cleaned.append(norm)
+    return cleaned
+
+
+def _extract_heading_candidates(text: str) -> list[str]:
+    """Extract explicit heading markers from the document content itself."""
+    headings: list[str] = []
+    seen: set[str] = set()
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        html_match = re.match(r"<h([1-6])[^>]*>\s*(.+?)\s*</h\1>", line, flags=re.IGNORECASE | re.DOTALL)
+        if html_match:
+            value = _clean_heading(html_match.group(2))
+            if value and value not in seen:
+                headings.append(value)
+                seen.add(value)
+            continue
+
+        markdown_match = re.match(r"^(?:#{1,6})\s+(.+)$", line)
+        if markdown_match:
+            value = _clean_heading(markdown_match.group(1))
+            if value and value.lower() not in {"abstract", "introduction"} and value not in seen:
+                headings.append(value)
+                seen.add(value)
+            continue
+
+        section_match = re.match(
+            r"^(?:Section|Chapter|Part)\s+[0-9IVXLC]+\s*[:.-]?\s*(.+)$",
+            line,
+            flags=re.IGNORECASE,
+        )
+        if section_match:
+            value = _clean_heading(section_match.group(1))
+            if value and value not in seen:
+                headings.append(value)
+                seen.add(value)
+            continue
+
+        if 2 <= len(line) <= 120 and line.endswith(":"):
+            value = _clean_heading(line.rstrip(":"))
+            if value and value not in seen and value[0].isupper():
+                headings.append(value)
+                seen.add(value)
+
+    return headings
+
+
+def _extract_title_from_text(document: Document) -> str:
+    """Return the title from explicit document structure, not filename heuristics."""
+    text = document.page_content
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        html_match = re.match(r"<h1[^>]*>\s*(.+?)\s*</h1>", line, flags=re.IGNORECASE | re.DOTALL)
+        if html_match:
+            value = _clean_heading(html_match.group(1))
+            if value:
+                return value
+
+        markdown_match = re.match(r"^#\s+(.+)$", line)
+        if markdown_match:
+            value = _clean_heading(markdown_match.group(1))
+            if value:
+                return value
+
+        if line and len(line) <= 180 and line[0].isupper() and len(line.split()) <= 15:
+            if not line.endswith(".") and not line.endswith("?"):
+                return _clean_heading(line)
+
+    return ""
+
+
+def _find_heading(document: Document) -> str:
+    """Use the actual heading structure from the document when available."""
+    metadata_title = _extract_pdf_title_from_metadata(document)
+    if metadata_title:
+        return metadata_title
+
+    title_from_text = _extract_title_from_text(document)
+    if title_from_text:
+        return title_from_text
+
+    heading_candidates = _extract_heading_candidates(document.page_content)
+    if heading_candidates:
+        return heading_candidates[0]
+    return ""
+
+
+def _make_metadata(document: Document, filename: str) -> dict[str, str | list[str]]:
+    """Create a concise set of PDF-relevant metadata fields for retrieval."""
+    page_number = document.metadata.get("page")
+    pdf_title = _extract_pdf_title_from_metadata(document)
+    title_from_text = _extract_title_from_text(document)
+    heading_candidates = _extract_heading_candidates(document.page_content)
+
+    title = pdf_title or title_from_text or (heading_candidates[0] if heading_candidates else "")
+    section_heading = heading_candidates[0] if heading_candidates else ""
+    topic_name = title or ""
+    authors = _extract_pdf_authors_from_metadata(document)
+
+    metadata: dict[str, str | list[str]] = {
         "filename": Path(filename).name,
-        "title": str(title).strip(),
-        "heading": _find_heading(document),
+        "title": title,
+        "authors": authors,
+        "section_heading": section_heading,
+        "topic_name": topic_name,
     }
+
+    if page_number is not None:
+        metadata["page_number"] = str(page_number)
+
+    if document.metadata.get("source"):
+        metadata["source"] = str(document.metadata["source"])
+
+    return metadata
 
 
 def _load_text_file(path: Path) -> list[Document]:
@@ -115,6 +240,53 @@ def _load_text_file(path: Path) -> list[Document]:
     return TextLoader(str(path), encoding="utf-8", autodetect_encoding=True).load()
 
 
+def _extract_pdf_page_headings(page_text: str) -> list[str]:
+    """Return explicit section headings from a single PDF page."""
+    return _extract_heading_candidates(page_text)
+
+
+def _load_pdf_file(path: Path) -> list[Document]:
+    """Parse PDFs using pypdf so we can preserve actual PDF metadata and page numbers."""
+    reader = PdfReader(str(path))
+    pdf_title = ""
+    if reader.metadata:
+        raw_title = getattr(reader.metadata, "/Title", None) or getattr(reader.metadata, "title", None)
+        if raw_title:
+            pdf_title = _clean_heading(str(raw_title))
+
+    documents: list[Document] = []
+    reader_authors = []
+    if reader.metadata:
+        raw_authors = getattr(reader.metadata, "/Author", None) or getattr(reader.metadata, "author", None)
+        if raw_authors:
+            reader_authors = [part.strip() for part in str(raw_authors).split(";") if part.strip()]
+
+    for page_number, page in enumerate(reader.pages, start=1):
+        text = page.extract_text() or ""
+        cleaned = _clean_text(text)
+        if not cleaned:
+            continue
+
+        headings = _extract_pdf_page_headings(cleaned)
+        page_metadata = {
+            "source": path.name,
+            "page": page_number,
+            "page_number": page_number,
+            "title": pdf_title,
+            "authors": reader_authors,
+            "topic_name": pdf_title,
+            "section_heading": headings[0] if headings else "",
+        }
+        documents.append(Document(page_content=cleaned, metadata=page_metadata))
+
+    if not documents and reader.metadata:
+        fallback = _clean_heading(str(reader.metadata.get("/Title") or reader.metadata.get("title") or ""))
+        if fallback:
+            documents.append(Document(page_content=fallback, metadata={"source": path.name, "page": 1, "page_number": 1, "title": fallback, "topic_name": fallback, "section_heading": fallback, "heading": fallback}))
+
+    return documents
+
+
 def _load_file(path: Path) -> list[Document]:
     suffix = path.suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
@@ -122,7 +294,7 @@ def _load_file(path: Path) -> list[Document]:
         raise ValueError(f"Unsupported document type: {suffix}. Supported types: {supported}")
 
     if suffix == ".pdf":
-        return PyPDFLoader(str(path), extract_images=False).load()
+        return _load_pdf_file(path)
     if suffix == ".docx":
         return Docx2txtLoader(str(path)).load()
     return _load_text_file(path)
