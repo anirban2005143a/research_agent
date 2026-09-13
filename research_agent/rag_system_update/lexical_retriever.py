@@ -1,5 +1,7 @@
 """Lexical retrieval using LangChain's BM25Retriever."""
 
+import uuid
+
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 
@@ -7,8 +9,8 @@ from .data_models import RetrievedChunk
 
 
 def _chunk_id(document: Document) -> str:
-    metadata = document.metadata
-    return f"{metadata.get('filename', '')}::{metadata.get('heading', '')}::{document.page_content}"
+    metadata = document.metadata or {}
+    return str(metadata.get("chunk_id") or uuid.uuid4())
 
 
 class LexicalRetriever:

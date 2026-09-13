@@ -31,13 +31,6 @@ def _safe_collection_name(session_id: str) -> str:
     return f"research_documents_{value}"
 
 
-def _chunk_id(document: Document) -> str:
-    metadata = document.metadata
-    section = metadata.get("section_heading") or metadata.get("heading") or ""
-    filename = metadata.get("filename", "")
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{filename}::{section}::{document.page_content}"))
-
-
 class DenseRetriever:
     """Own the vector database and dense embedding operations."""
 
@@ -85,7 +78,11 @@ class DenseRetriever:
         for start in range(0, total, batch_size):
             end = min(start + batch_size, total)
             batch = chunks[start:end]
-            ids = [str(uuid.uuid4()) for _ in batch]
+            for document in batch:
+                metadata = dict(document.metadata or {})
+                metadata.setdefault("chunk_id", str(uuid.uuid4()))
+                document.metadata = metadata
+            ids = [str(document.metadata["chunk_id"]) for document in batch]
             print(f"[RAG][EMBEDDING] Embedding chunks {start + 1}-{end}/{total}")
             self.vector_store.add_documents(batch, ids=ids)
 
@@ -95,9 +92,12 @@ class DenseRetriever:
         results = self.vector_store.similarity_search_with_relevance_scores(query, k=limit)
         chunks: list[RetrievedChunk] = []
         for rank, (document, score) in enumerate(results, start=1):
+            chunk_id = document.metadata.get("chunk_id") if document.metadata else None
+            if not chunk_id:
+                chunk_id = str(uuid.uuid4())
             chunks.append(
                 RetrievedChunk(
-                    chunk_id=_chunk_id(document),
+                    chunk_id=chunk_id,
                     document=document,
                     retrieval_score=float(score),
                     dense_rank=rank,

@@ -76,9 +76,30 @@ def _extract_pdf_authors_from_metadata(document: Document) -> list[str]:
     return cleaned
 
 
-def _extract_heading_candidates(text: str) -> list[str]:
-    """Extract explicit heading markers from the document content itself."""
-    headings: list[str] = []
+def _is_generic_heading(value: str) -> bool:
+    normalized = value.lower().strip().rstrip(":")
+    generic = {
+        "abstract",
+        "introduction",
+        "background",
+        "motivation",
+        "related work",
+        "method",
+        "methods",
+        "results",
+        "discussion",
+        "conclusion",
+        "limitations",
+        "acknowledgments",
+        "references",
+        "appendix",
+    }
+    return normalized in generic or normalized.startswith("section ") or normalized.startswith("chapter ") or normalized.startswith("part ")
+
+
+def _heading_candidates_from_text(text: str) -> list[str]:
+    """Extract heading-like candidates from markdown or raw text while ignoring generic sections."""
+    candidates: list[str] = []
     seen: set[str] = set()
 
     for raw_line in text.splitlines():
@@ -86,84 +107,55 @@ def _extract_heading_candidates(text: str) -> list[str]:
         if not line:
             continue
 
-        html_match = re.match(r"<h([1-6])[^>]*>\s*(.+?)\s*</h\1>", line, flags=re.IGNORECASE | re.DOTALL)
-        if html_match:
-            value = _clean_heading(html_match.group(2))
-            if value and value not in seen:
-                headings.append(value)
-                seen.add(value)
-            continue
-
-        markdown_match = re.match(r"^(?:#{1,6})\s+(.+)$", line)
+        markdown_match = re.match(r"^(?:#{1,6})\s+(.+?)\s*$", line)
         if markdown_match:
             value = _clean_heading(markdown_match.group(1))
-            if value and value.lower() not in {"abstract", "introduction"} and value not in seen:
-                headings.append(value)
+            if value and not _is_generic_heading(value) and value not in seen:
+                candidates.append(value)
                 seen.add(value)
             continue
 
-        section_match = re.match(
-            r"^(?:Section|Chapter|Part)\s+[0-9IVXLC]+\s*[:.-]?\s*(.+)$",
-            line,
-            flags=re.IGNORECASE,
-        )
-        if section_match:
-            value = _clean_heading(section_match.group(1))
-            if value and value not in seen:
-                headings.append(value)
-                seen.add(value)
-            continue
-
-        if 2 <= len(line) <= 120 and line.endswith(":"):
-            value = _clean_heading(line.rstrip(":"))
-            if value and value not in seen and value[0].isupper():
-                headings.append(value)
+        numbered_match = re.match(r"^(?:\d+|[IVXLC]+)[\.,\)]?\s+(.+)$", line, flags=re.IGNORECASE)
+        if numbered_match:
+            value = _clean_heading(numbered_match.group(1))
+            if value and not _is_generic_heading(value) and value not in seen and value[0].isupper() and len(value.split()) <= 12:
+                candidates.append(value)
                 seen.add(value)
 
-    return headings
+    return candidates
 
 
-def _extract_title_from_text(document: Document) -> str:
-    """Return the title from explicit document structure, not filename heuristics."""
-    text = document.page_content
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
+def _extract_document_structure(markdown_text: str, fallback_text: str = "", pdf_title: str = "") -> dict[str, str]:
+    """Return a single document structure object: title, heading, section_heading."""
+    title = pdf_title
+    candidate_headings = _heading_candidates_from_text(markdown_text or fallback_text)
 
-        html_match = re.match(r"<h1[^>]*>\s*(.+?)\s*</h1>", line, flags=re.IGNORECASE | re.DOTALL)
-        if html_match:
-            value = _clean_heading(html_match.group(1))
-            if value:
-                return value
+    if not title and markdown_text:
+        for value in _heading_candidates_from_text(markdown_text):
+            if value and not _is_generic_heading(value):
+                title = value
+                break
 
-        markdown_match = re.match(r"^#\s+(.+)$", line)
-        if markdown_match:
-            value = _clean_heading(markdown_match.group(1))
-            if value:
-                return value
+    if not title and fallback_text:
+        for value in _heading_candidates_from_text(fallback_text):
+            if value and not _is_generic_heading(value):
+                title = value
+                break
 
-        if line and len(line) <= 180 and line[0].isupper() and len(line.split()) <= 15:
-            if not line.endswith(".") and not line.endswith("?"):
-                return _clean_heading(line)
+    section_heading = ""
+    ordered_candidates = [value for value in candidate_headings if value.lower() != (title or "").lower()]
+    if ordered_candidates:
+        section_heading = ordered_candidates[0]
 
-    return ""
+    if not section_heading and title:
+        section_heading = title
 
-
-def _find_heading(document: Document) -> str:
-    """Use the actual heading structure from the document when available."""
-    metadata_title = _extract_pdf_title_from_metadata(document)
-    if metadata_title:
-        return metadata_title
-
-    title_from_text = _extract_title_from_text(document)
-    if title_from_text:
-        return title_from_text
-
-    heading_candidates = _extract_heading_candidates(document.page_content)
-    if heading_candidates:
-        return heading_candidates[0]
-    return ""
+    heading = section_heading or title or ""
+    return {
+        "title": title or "",
+        "heading": heading,
+        "section_heading": section_heading or heading,
+    }
 
 
 def _pdf_outline_heading_map(doc: pymupdf.Document) -> dict[int, str]:
@@ -202,19 +194,19 @@ def _make_metadata(document: Document, file_path: str | Path) -> dict[str, str |
     """Create a concise set of PDF-relevant metadata fields for retrieval."""
     page_number = document.metadata.get("page")
     pdf_title = _extract_pdf_title_from_metadata(document)
-    title_from_text = _extract_title_from_text(document)
-    heading_candidates = _extract_heading_candidates(document.page_content)
+    markdown_text = str(document.metadata.get("markdown_source") or "")
+    structure = _extract_document_structure(markdown_text, document.page_content, pdf_title)
 
-    title = pdf_title or title_from_text or (heading_candidates[0] if heading_candidates else "")
-    section_heading = heading_candidates[0] if heading_candidates else ""
-    heading = section_heading or title or ""
+    title = structure["title"]
+    heading = structure["heading"]
+    section_heading = structure["section_heading"]
     authors = _extract_pdf_authors_from_metadata(document)
 
     metadata: dict[str, str | list[str]] = {
         "filename": Path(file_path).name,
         "title": title,
         "heading": heading,
-        "section_heading": section_heading or heading,
+        "section_heading": section_heading,
     }
 
     if authors:
@@ -276,11 +268,6 @@ def _load_text_file(path: Path) -> list[Document]:
     return TextLoader(str(path), encoding="utf-8", autodetect_encoding=True).load()
 
 
-def _extract_pdf_page_headings(page_text: str) -> list[str]:
-    """Return explicit section headings from a single PDF page."""
-    return _extract_heading_candidates(page_text)
-
-
 def _load_pdf_file(path: Path) -> list[Document]:
     """Parse PDFs using PyMuPDF + pypdf so section headings and metadata come from the document itself."""
     markdown_source = ""
@@ -319,8 +306,8 @@ def _load_pdf_file(path: Path) -> list[Document]:
         if not cleaned:
             continue
 
-        headings = _extract_pdf_page_headings(cleaned)
-        heading = outline_heading_map.get(page_number) or headings[0] if headings else ""
+        structure = _extract_document_structure(markdown_source, cleaned, pdf_title)
+        heading = outline_heading_map.get(page_number) or structure["heading"]
         if not heading:
             heading = pdf_title or ""
 
@@ -328,9 +315,9 @@ def _load_pdf_file(path: Path) -> list[Document]:
             "source": path.name,
             "page": page_number,
             "page_number": page_number,
-            "title": pdf_title,
+            "title": structure["title"] or pdf_title,
             "heading": heading,
-            "section_heading": heading,
+            "section_heading": structure["section_heading"] or heading,
         }
         if reader_authors:
             page_metadata["authors"] = reader_authors
