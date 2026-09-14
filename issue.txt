@@ -18,3 +18,9 @@ ex: it should plan according to the tools and resourceswe have along with the ta
 8. needs to mention the sources (url and the external uploaded docs also 'page no if possible')
 
 9. ui shows duplicate stored file name  
+
+10. Evaluation - 
+    a. whether the retrieved content actually overlaps with the expected paper section
+    b. whether the question is answered by that retrieved content
+    c. whether the result is the expected document for that exact question
+    d. a stronger measure than only filename matching

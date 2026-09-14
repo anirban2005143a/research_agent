@@ -113,6 +113,37 @@ python -m research_agent.rag_system_update.main
 
 This starts the update-package RAG flow and exercises the active document handler implementation.
 
+## Evaluation pipeline
+
+The project also includes a dedicated research-paper evaluation pack under [research_agent/rag_system_update/rag_evaluation_research_papers](research_agent/rag_system_update/rag_evaluation_research_papers), with its own documentation in [research_agent/rag_system_update/rag_evaluation_research_papers/README.md](research_agent/rag_system_update/rag_evaluation_research_papers/README.md).
+
+This folder is used to evaluate the live retrieval pipeline on a fixed set of AI research PDFs stored under:
+
+```text
+research_agent/rag_system_update/Artificial_Intelligence/
+```
+
+The evaluation flow is:
+
+1. process the source directory and index all PDFs through `HybridRAG`
+2. load the evaluation cases from `eval_cases.json`
+3. run each question against the live retriever
+4. score whether the expected paper appears in the top-k results
+5. write the summary and per-case results to `eval_results.json`
+
+Run the evaluation from the project root with:
+
+```powershell
+python research_agent/rag_system_update/rag_evaluation_research_papers/process_doc_and_query.py
+```
+
+Key files in the evaluation pack include:
+
+- `process_doc_and_query.py` — main orchestration, source indexing, retrieval, evaluation loop, JSON output
+- `evaluate_retrieval.py` — score one result set against an expected source paper
+- `eval_cases.json` — the benchmark questions and expected source documents
+- `eval_results.json` — generated result summary for the latest run
+
 ## Research workflow
 
 The broader project still follows the same high-level pattern:
