@@ -55,17 +55,17 @@ def _source_quality_check(source_text: str) -> str:
 
 
 def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | None = None) -> list[Any]:
-    """Build tools with explicit schemas and access to this session's document store."""
+    """Build the research tool set for the current session with clear, purpose-driven tool descriptions."""
     document_handler = document_handler or rag.document_handler
 
     @tool("web_search", args_schema=QueryInput)
     def web_search(query: str) -> str:
-        """Search current broad web sources. Use for recent events, market data, policy, and general evidence."""
+        """Use for current facts, recent events, broad background, policy updates, or general evidence that is not in the stored documents. Prefer precise, question-specific queries."""
         return _web_search(query)
 
     @tool("rag_search", args_schema=QueryInput)
     def rag_search(query: str) -> str:
-        """Search uploaded and previously stored documents. Use whenever local document evidence may answer the question."""
+        """Use when the question likely depends on uploaded or stored local documents. Search the indexed document corpus for matching evidence and return the strongest chunks with citations."""
         log(f"TOOL rag_search | query={query!r}")
         started = time.perf_counter()
         matches = retry_call(lambda: rag.retrieve(query, k=settings.rag_top_k), "tool.rag_search")
@@ -79,14 +79,14 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
 
     @tool("read_stored_file", args_schema=FileInput)
     def read_stored_file(source_name: str, query: str = "") -> str:
-        """Read a specific uploaded or stored file when the question names it or an excerpt needs verification."""
+        """Use after a file name is known and you need the actual text of a specific uploaded document, usually to verify a claim or inspect a relevant section. Do not use this for vague file discovery."""
         log(f"TOOL read_stored_file | source={source_name!r} | query={query!r}")
         with timed("read_stored_file"):
             return retry_call(lambda: document_handler.read_stored_file(source_name, query=query), "tool.read_stored_file")
 
     @tool("list_stored_files")
     def list_stored_files() -> str:
-        """List uploaded files available to the local knowledge source."""
+        """Use when you need to discover which local files are available before choosing a document-specific read/search. Returns the stored file names and counts."""
         log("TOOL list_stored_files")
         files = document_handler.list_files()
         return (
@@ -101,7 +101,7 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
 
     @tool("source_quality_check", args_schema=QualityInput)
     def source_quality_check(source_text: str) -> str:
-        """Assess whether a source has signals of authority; never treat this as proof of quality."""
+        """Use to assess whether a source shows signs of authority (publisher, methods, DOI, institution, etc.). This does not prove correctness; it only flags credibility signals."""
         log(f"TOOL source_quality_check | chars={len(source_text)}")
         return _source_quality_check(source_text)
 
@@ -110,14 +110,14 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
 
     @tool("wikipedia_search", args_schema=QueryInput)
     def wikipedia_search(query: str) -> str:
-        """Search Wikipedia for concise background context using this exact topic query."""
+        """Use for concise background, definitions, historical context, or neutral overview material. Prefer more authoritative sources for technical or disputed claims."""
         log(f"TOOL wikipedia_search | query={query!r}")
         with timed("wikipedia_search"):
             return str(retry_call(lambda: wikipedia_backend.invoke(query), "tool.wikipedia_search"))
 
     @tool("arxiv_search", args_schema=QueryInput)
     def arxiv_search(query: str) -> str:
-        """Search ArXiv for academic and technical papers using this exact topic query."""
+        """Use for academic papers, system design details, implementation behavior, algorithms, and technical literature. Best for research questions that require formal or peer-reviewed technical evidence."""
         log(f"TOOL arxiv_search | query={query!r}")
         with timed("arxiv_search"):
             return str(retry_call(lambda: arxiv_backend.invoke(query), "tool.arxiv_search"))
