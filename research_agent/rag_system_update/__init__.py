@@ -1,13 +1,10 @@
-"""Research-document RAG components."""
+﻿"""Research-document RAG components."""
 
-from .data_models import RetrievedChunk, SearchResults
-from .document_handler import DocumentHandler, SUPPORTED_EXTENSIONS
-from .rag_engine import HybridRAG
+from .document_handler import BaseDocumentHandler, DocumentHandler, PDFDocumentHandler, SUPPORTED_EXTENSIONS
 
 __all__ = [
+    "BaseDocumentHandler",
     "DocumentHandler",
-    "HybridRAG",
-    "RetrievedChunk",
-    "SearchResults",
+    "PDFDocumentHandler",
     "SUPPORTED_EXTENSIONS",
 ]
