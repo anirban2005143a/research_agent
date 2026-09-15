@@ -1,0 +1,10 @@
+[{
+    "id": "01-01",
+    "question": "Why does GPU-CFR compile a fixed game tree into a static dataflow representation?",
+    "expected_source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
+    "relevant_pages": [
+      3
+    ],
+    "reference_answer": "Because for a fixed game, shapes, indices, and buffer addresses do not change; compiling them once removes repeated framework dispatch and data-structure overhead.",
+    "expected_page": 3
+}]

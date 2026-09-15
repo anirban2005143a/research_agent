@@ -1,6 +1,6 @@
-1. on upload a pdf , it imediately get uploaded and i guess no embeddings are generated and store , as no logs are there in console , so i want that , when user upload a doc , it shows loading screen , while the doc get parsed and embdded and store in the vector store
+1. on upload a pdf , it imediately get uploaded and i guess no embeddings are generated and store , as no logs are there in console , so i want that , when user upload a doc , it shows loading screen , while the doc get parsed and embdded and store in the vector store - done
 
-2. even the doc is not stored in the /documents folder under that session-id.
+2. even the doc is not stored in the /documents folder under that session-id. - done
 
 3. better chunking and storing with metadata (filename , title , headings of the section), bettern searching instead of semantic and bm25 search . 
 ex: if someone search using author or year or title , which is not sementically match with some chunk . 
@@ -28,3 +28,5 @@ ex: it should plan according to the tools and resourceswe have along with the ta
 11. need to check the combination of different scores
 
 12. duplicate chunk_id in metadata also in main chunk data.
+
+13. remove the eval_cases.jsonl - done

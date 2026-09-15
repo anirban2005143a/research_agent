@@ -9,9 +9,8 @@ from ..data_types import RetrievedChunk, SearchResults
 
 
 DEFAULT_PAGE_TOLERANCE = 2
-SOURCE_WEIGHT = 0.70
-EXACT_PAGE_WEIGHT = 0.30
-TOLERANT_PAGE_WEIGHT = 0.15
+EXACT_PAGE_WEIGHT = 0.6
+TOLERANT_PAGE_WEIGHT = 0.4
 
 
 def _normalize_filename(value: str) -> str:
@@ -100,47 +99,53 @@ def evaluate_single_query(
 
     for result in top_k_results:
         metadata = result.document.metadata
-        source_is_match = source_match(metadata, expected_source)
+        is_source_match = source_match(metadata, expected_source)
         result_page_match = page_match(
             metadata,
             expected_page=expected_page,
             relevant_pages=relevant_pages,
             tolerance=page_tolerance,
         )
-        if source_is_match:
-            matched_results.append(result)
+        if is_source_match:
             source_match_count += 1
-
             if result_page_match == "exact":
                 exact_page_results.append(result)
                 exact_page_count += 1
+
+                matched_results.append(result)
+
             elif result_page_match == "tolerant":
                 tolerant_page_results.append(result)
                 tolerant_page_count += 1
-                
+
+                matched_results.append(result)
+
+            else :
+                unmatched_results.append(result)
         else:
             unmatched_results.append(result)
 
         weighted_scores.append(
-            (SOURCE_WEIGHT if source_is_match else 0.0)
-            + (EXACT_PAGE_WEIGHT if source_is_match and result_page_match == "exact" else 0.0)
-            + (TOLERANT_PAGE_WEIGHT if source_is_match and result_page_match == "tolerant" else 0.0)
+            (EXACT_PAGE_WEIGHT if is_source_match and result_page_match == "exact" else 0.0)
+            + (TOLERANT_PAGE_WEIGHT if is_source_match and result_page_match == "tolerant" else 0.0)
         )
 
     result_count = len(top_k_results)
+    total_relevent_count = exact_page_count + tolerant_page_count
+    precision = total_relevent_count / result_count if result_count else 0.0
     source_precision = source_match_count / result_count if result_count else 0.0
     exact_page_precision = exact_page_count / result_count if result_count else 0.0
     tolerant_page_precision = tolerant_page_count / result_count if result_count else 0.0
     weighted_score = sum(weighted_scores) / result_count if result_count else 0.0
 
     return {
-        "precision@k": source_precision,
+        "precision@k": precision,
         "source_precision@k": source_precision,
         "exact_page_precision@k": exact_page_precision,
         "tolerant_page_precision@k": tolerant_page_precision,
         "weighted_score@k": weighted_score,
-        "hits@k": source_match_count,
-        "misses@k": result_count - source_match_count,
+        "hits@k": total_relevent_count,
+        "misses@k": result_count - total_relevent_count,
         "exact_page_hits@k": exact_page_count,
         "tolerant_page_hits@k": tolerant_page_count,
         "matched_results": matched_results,

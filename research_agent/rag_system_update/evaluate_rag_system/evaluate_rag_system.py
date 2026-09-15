@@ -10,7 +10,7 @@ from typing import Any
 
 from research_agent.rag_system_update.rag_engine import HybridRAG
 from research_agent.rag_system_update.data_types import RetrievedChunk
-from .evaluate_retrieval import evaluate_single_query
+from .evaluate_query_result import evaluate_single_query
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
