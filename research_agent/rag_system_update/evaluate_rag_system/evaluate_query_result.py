@@ -159,4 +159,4 @@ if __name__ == "__main__":
         chunk_id="sample",
         document=Document(page_content="hello", metadata={"source": "paper_01.pdf", "page_number": 3}),
     )
-    print(evaluate_single_query(SearchResults(results=[sample_chunk]), "paper_01.pdf", expected_page=3, k=5))
+    print(evaluate_single_query(SearchResults(results=[sample_chunk]), "paper_01.pdf", expected_page=3))

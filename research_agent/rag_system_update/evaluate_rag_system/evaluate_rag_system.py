@@ -100,7 +100,6 @@ def evaluate_test_case(
         expected_source,
         expected_page=expected_page,
         relevant_pages=relevant_pages,
-        k=k,
     )
 
     return {
@@ -118,10 +117,10 @@ def evaluate_test_case(
         "misses@k": score["misses@k"],
         "exact_page_hits@k": score["exact_page_hits@k"],
         "tolerant_page_hits@k": score["tolerant_page_hits@k"],
-        "matched_results": [result for result in score["matched_results"]],
-        "unmatched_results": [result for result in score["unmatched_results"]],
-        "exact_page_results": [result for result in score["exact_page_results"]],
-        "tolerant_page_results": [result for result in score["tolerant_page_results"]],
+        "matched_results": [result.model_dump() for result in score["matched_results"]],
+        "unmatched_results": [result.model_dump() for result in score["unmatched_results"]],
+        "exact_page_results": [result.model_dump() for result in score["exact_page_results"]],
+        "tolerant_page_results": [result.model_dump() for result in score["tolerant_page_results"]],
     }
 
 
@@ -145,7 +144,7 @@ def evaluate_all_cases(
 
 if __name__ == "__main__":
     source_dir = SOURCE_DIR
-    cases_path = Path(__file__).resolve().parent / "eval_cases.json"
+    cases_path = Path(__file__).resolve().parent / "eval_cases_temp.json"
 
     rag = process_source_directory(source_dir=source_dir, session_id=SESSION_ID)
     result = evaluate_all_cases(
