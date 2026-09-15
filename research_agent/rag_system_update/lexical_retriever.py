@@ -5,7 +5,7 @@ import uuid
 from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 
-from .data_models import RetrievedChunk
+from .data_types import RetrievedChunk
 
 
 def _chunk_id(document: Document) -> str:

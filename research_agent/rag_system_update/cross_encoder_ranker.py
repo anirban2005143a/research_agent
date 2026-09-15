@@ -5,7 +5,7 @@ import math
 from sentence_transformers import CrossEncoder
 
 from ..config import settings
-from .data_models import RetrievedChunk
+from .data_types import RetrievedChunk
 
 
 _RERANKER_MODEL_ID = getattr(settings, "rag_reranker_model_id", "BAAI/bge-reranker-base")

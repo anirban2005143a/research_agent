@@ -2,11 +2,11 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable
+from typing import Callable
 
 from ..config import settings
 from .cross_encoder_ranker import CrossEncoderRanker
-from .data_models import SearchResults
+from .data_types import SearchResults
 from .dense_retriever import DenseRetriever
 from .document_handler import DocumentHandler
 from .lexical_retriever import LexicalRetriever
@@ -86,13 +86,13 @@ class HybridRAG:
         print(f"[RAG][INDEX] Completed: {source} | {len(chunks)} chunks")
         return len(chunks)
 
-    def retrieve(self, query: str, k: int | None = None) -> list[dict[str, Any]]:
+    def retrieve(self, query: str, k: int = getattr(settings, "rag_top_k", 8)) -> SearchResults:
         """Run dense + BM25 retrieval, RRF fusion, cross-encoder reranking, and final ranking."""
         query = query.strip()
         if not query:
-            return []
+            return SearchResults()
 
-        final_k = k or getattr(settings, "rag_top_k", 8)
+        final_k = k 
         candidate_count = max(final_k * getattr(settings, "rag_candidate_multiplier", 6), final_k)
 
         print(f"[RAG][QUERY] Searching for: {query}")
@@ -113,4 +113,4 @@ class HybridRAG:
         reranked = self.cross_encoder_ranker.rank(query, fused)
         final_results: SearchResults = self.overall_ranker.rank(reranked, final_k)
 
-        return final_results.as_dicts()
+        return final_results

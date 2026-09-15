@@ -2,20 +2,87 @@
 
 Research Agent is a research-focused assistant that combines LLM-based planning with a local document retrieval pipeline. The project supports evidence-based research questions, optional document grounding, and hybrid retrieval over uploaded files and external sources.
 
-## Current RAG implementation
+## Current RAG Implementation
 
-The active document pipeline is the refactored update package under [research_agent/rag_system_update](research_agent/rag_system_update). It keeps the core responsibilities clean:
+The active document pipeline is the refactored update package under [research_agent/rag_system_update](research_agent/rag_system_update). The older `research_agent/rag_system/` package remains as a separate legacy implementation and is not the active update path.
 
-- generic file validation and chunking belong to `DocumentHandler`
-- PDF-specific parsing and heading extraction belong to `PDFDocumentHandler`
-- document indexing and retrieval orchestration belong to `HybridRAG`
-- ranking is separated into dedicated retriever and ranker components
+The active package keeps responsibilities separated:
 
-The old `rag_system` package still exists as a separate legacy implementation, but the active flow for the current project is the update package.
+- generic validation, persistence, loading, and chunking belong to `DocumentHandler`
+- PDF-specific parsing, markdown conversion, TOC handling, title, author, and heading extraction belong to `PDFDocumentHandler`
+- indexing and retrieval orchestration belong to `HybridRAG`
+- dense retrieval, lexical retrieval, fusion, reranking, and final ranking are separate components
+- `RetrievedChunk` and `SearchResults` are the shared Pydantic data types
 
-## Supported document types
+## Complete Architecture
 
-The current `DocumentHandler` only allows these extensions:
+```text
+Input file path
+    |
+    v
+HybridRAG.store_document(file_path)
+    |
+    +--> documents/<session_id>/<filename>
+    |       canonical session copy
+    |
+    +--> DocumentHandler.prepare_file(file_path)
+              |
+              +--> PDFDocumentHandler for PDF files
+              |       +--> pypdf page text and PDF metadata
+              |       +--> pymupdf4llm markdown conversion
+              |       +--> PyMuPDF outline / TOC headings
+              |
+              +--> TextLoader for .txt and .md
+              +--> Docx2txtLoader for .docx
+              +--> python-pptx for .ppt and .pptx
+              |
+              +--> clean text, attach metadata, split into chunks
+    |
+    +--> UUID chunk IDs + Hugging Face embeddings
+    |       |
+    |       +--> Chroma: .chroma/<session_id>
+    |       +--> BM25: rebuilt in memory from session documents
+
+Query
+    |
+    v
+HybridRAG.retrieve(query, k)
+    |
+    +--> dense Chroma candidates
+    +--> BM25 lexical candidates
+    +--> Reciprocal Rank Fusion
+    +--> cross-encoder reranking
+    +--> weighted harmonic final ranking
+    +--> SearchResults(results=[RetrievedChunk, ...])
+```
+
+## Package Layout
+
+```text
+research_agent/
+├── config.py
+├── rag_system/                         legacy implementation
+└── rag_system_update/
+    ├── __init__.py
+    ├── main.py                          interactive CLI checker
+    ├── rag_engine.py                    HybridRAG orchestration
+    ├── data_types.py                    Pydantic RetrievedChunk/SearchResults
+    ├── dense_retriever.py               Chroma and embedding retrieval
+    ├── lexical_retriever.py             BM25 retrieval
+    ├── rrf_ranker.py                    rank fusion
+    ├── cross_encoder_ranker.py          candidate reranking
+    ├── overall_ranker.py                final ranking
+    ├── document_handler/
+    │   ├── __init__.py
+    │   ├── document_handler.py          generic loading/storage/chunking
+    │   └── pdf_handler.py               PDF parsing and metadata
+    ├── Artificial_Intelligence/         benchmark PDF corpus
+    └── rag_evaluation_research_papers/  benchmark code and cases
+```
+
+## Supported Document Types
+
+The active `DocumentHandler` allows:
 
 - `.pdf`
 - `.md`
@@ -24,86 +91,176 @@ The current `DocumentHandler` only allows these extensions:
 - `.docx`
 - `.txt`
 
-Anything outside that allowlist is rejected during file preparation.
+Anything outside this allowlist is rejected during file preparation.
 
-## Architecture
+## Core API
 
-```text
-Uploaded file
-    |
-    v
-DocumentHandler
-    |-- validates extension
-    |-- chooses PDF-specific handler when needed
-    |-- loads file contents
-    |-- cleans page/text content
-    |-- extracts metadata
-    |-- generates chunks
-    v
-HybridRAG / rag_engine
-    |-- stores chunks in Chroma
-    |-- embeds chunks with local model
-    |-- retrieves dense + BM25 candidates
-    |-- reranks and returns top-k results
+### `HybridRAG`
+
+```python
+from research_agent.rag_system_update.rag_engine import HybridRAG
+
+rag = HybridRAG(session_id="my-research-session")
+rag.store_document("path/to/paper.pdf")
+results = rag.retrieve("What evidence supports the main conclusion?", k=5)
 ```
 
-## RAG update package layout
+The `session_id` isolates both storage namespaces:
 
-```text
-research_agent/
-├── rag_system_update/
-│   ├── __init__.py
-│   ├── README.md
-│   ├── main.py
-│   ├── rag_engine.py
-│   ├── data_models.py
-│   ├── dense_retriever.py
-│   ├── lexical_retriever.py
-│   ├── overall_ranker.py
-│   ├── rrf_ranker.py
-│   ├── cross_encoder_ranker.py
-│   └── document_handler/
-│       ├── __init__.py
-│       ├── document_handler.py
-│       └── pdf_handler.py
+- original files: `DOCUMENTS_DIR/<session_id>/`
+- vector database: `CHROMA_DIR/<session_id>/`
+- Chroma collection: sanitized session-specific collection name
+
+A query never searches another session's collection.
+
+### Ingestion contract
+
+```python
+count = rag.store_document(file_path, progress_callback=None)
 ```
 
-### Document handler responsibilities
+- The RAG API accepts one file path, never a directory.
+- Directory expansion belongs only to a CLI or benchmark wrapper.
+- An external file is copied into the session directory before parsing.
+- Re-uploading the same basename replaces the session file and deletes its old Chroma chunks before re-indexing.
+- The return value is the number of chunks indexed.
 
-The update package uses a parent/child structure:
+### Retrieval contract
 
-- `DocumentHandler` handles shared loading, validation, storage, and chunk generation
-- `PDFDocumentHandler` adds PDF-specific parsing, TOC extraction, title handling, and page heading logic
+`HybridRAG.retrieve()` returns a Pydantic `SearchResults` object:
 
-This keeps the generic path simple while preserving PDF-specific behavior in one child class.
+```python
+SearchResults(
+    results=[
+        RetrievedChunk(
+            chunk_id="uuid",
+            document=Document(...),
+            rrf_score=0.02,
+            rrf_normalized=0.5,
+            cross_encoder_score=0.03,
+            cross_encoder_normalized=0.51,
+            final_score=0.50,
+        )
+    ]
+)
+```
 
-## Retrieval flow
+The CLI and benchmark serialize each chunk to this JSON shape:
 
-1. A file is saved under the session storage directory.
-2. `prepare_file()` resolves the proper document handler.
-3. The file is loaded as LangChain `Document` objects.
-4. Each document is cleaned and metadata is attached.
-5. `generate_chunks()` splits the content into retrieval chunks.
-6. `HybridRAG.store_document()` indexes those chunks in Chroma.
-7. Retrieval combines dense and lexical signals, reranks the results, and returns the final top-k set.
+```json
+{
+  "content": "retrieved chunk text",
+  "metadata": {
+    "chunk_id": "uuid",
+    "filename": "paper.pdf",
+    "source": "paper.pdf",
+    "title": "Document title",
+    "heading": "Current section heading",
+    "section_heading": "Current section heading",
+    "page_number": "6",
+    "authors": ["Author Name"],
+    "score": 0.60,
+    "rrf_score": 0.02,
+    "cross_encoder_score": 0.03
+  }
+}
+```
 
-## Local indexing and retrieval
+`chunk_id` is a UUID assigned at storage time and shared by dense and BM25 retrieval so RRF can identify the same chunk.
 
-The active RAG system is meant to run locally with the project settings object controlling storage, chunk size, embedding model, batch size, and retrieval options.
+## Ingestion Details
 
-Typical project settings include:
+### Generic document handling
 
-- `DOCUMENTS_DIR`
-- `CHROMA_DIR`
+`DocumentHandler.prepare_file()` validates a single path, dispatches by extension, loads LangChain `Document` objects, cleans their text, attaches default source/filename metadata, and calls `generate_chunks()`.
+
+Chunking uses `RecursiveCharacterTextSplitter` with:
+
 - `RAG_CHUNK_SIZE`
 - `RAG_CHUNK_OVERLAP`
-- `RAG_EMBEDDING_BATCH_SIZE`
-- `RAG_TOP_K`
-- `RAG_CANDIDATE_MULTIPLIER`
+- paragraph, line, sentence, semicolon, comma, word, and character separators
 
-The update package is designed so that the app can index uploaded files and later recall the most relevant chunks without depending on a hard-coded path or ad hoc loader logic.
+### PDF handling
 
-## Running the document pipeline
+`PDFDocumentHandler` processes PDFs page by page using:
+
+1. `pypdf` for page text and embedded metadata
+2. `pymupdf4llm.to_markdown(path, use_ocr=False)` for structure-aware markdown
+3. PyMuPDF outline/table-of-contents data when available
+
+The parser captures title and authors from PDF metadata when available. Heading and section metadata comes from the document's markdown/outline structure, with page text as a fallback. The filename is a source identifier, not a document title.
+
+Each PDF page receives metadata such as:
+
+- `filename`
+- `source`
+- `title`
+- `heading`
+- `section_heading`
+- `page_number`
+- `authors`, when available
+
+### UUID and replacement behavior
+
+Each stored chunk receives `metadata["chunk_id"] = uuid.uuid4()`. The same UUID is passed to Chroma. Before re-indexing a file, the retriever deletes all chunks whose `filename` matches the incoming basename.
+
+## Retrieval And Ranking
+
+### Dense retrieval
+
+`dense_retriever.py` uses normalized Hugging Face embeddings with LangChain Chroma. Persistent storage is under `CHROMA_DIR/<session_id>`. Dense and lexical retrieval each request up to:
+
+```text
+RAG_TOP_K * RAG_CANDIDATE_MULTIPLIER
+```
+
+### BM25 lexical retrieval
+
+`lexical_retriever.py` builds an in-memory BM25 index from all documents in the current session's Chroma collection. It is rebuilt after ingestion and when `HybridRAG` starts. It helps with exact names, acronyms, numbers, and terminology.
+
+### Reciprocal Rank Fusion
+
+`rrf_ranker.py` joins dense and BM25 results by UUID. With smoothing value `60`, rank `r` contributes:
+
+$$
+\operatorname{RRF}(r) = \frac{1}{60 + r}
+$$
+
+The result is normalized against the theoretical maximum score for rank one in both retrievers and passed to the next stage.
+
+### Cross-encoder reranking
+
+`cross_encoder_ranker.py` scores `(query, chunk_text)` pairs only after RRF has reduced the candidate set. Raw scores are converted with a sigmoid into `cross_encoder_normalized`. The model is loaded once at module import and reused. Set `RAG_RERANKER_ENABLED=false` to disable it.
+
+### Final ranking
+
+`overall_ranker.py` combines `rrf_normalized` and `cross_encoder_normalized` with a weighted harmonic mean. This favors results supported by both retrieval signals. The current constructor uses RRF weight `0.4` and cross-encoder weight `0.6`.
+
+## Configuration
+
+Settings are loaded from `.env` by `research_agent/config.py`.
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `DOCUMENTS_DIR` | `documents` | Session file storage root |
+| `CHROMA_DIR` | `.chroma` | Persistent Chroma root |
+| `EMBEDDING_MODEL_ID` | `BAAI/bge-m3` in shared settings | Embedding model setting |
+| `EMBEDDING_CACHE_DIR` | `.models` | Model cache directory |
+| `EMBEDDING_LOCAL_FILES_ONLY` | `false` | Disable model downloads |
+| `RAG_RERANKER_MODEL_ID` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model |
+| `RAG_RERANKER_ENABLED` | `true` | Enable cross-encoder |
+| `RAG_RERANKER_LOCAL_FILES_ONLY` | `false` | Use cached reranker only |
+| `RAG_CHUNK_SIZE` | `900` | Maximum chunk size |
+| `RAG_CHUNK_OVERLAP` | `140` | Chunk overlap |
+| `RAG_EMBEDDING_BATCH_SIZE` | `16` | Embedding batch size |
+| `RAG_TOP_K` | `8` | Default final result count |
+| `RAG_CANDIDATE_MULTIPLIER` | `6` | Candidate expansion factor |
+| `HUGGINGFACEHUB_API_TOKEN` | empty | Hugging Face authentication/rate limits |
+| `HF_PROVIDER` | `auto` | Hugging Face provider |
+
+Note: the current dense retriever reads `settings.rag_embedding_model_id` and falls back to `BAAI/bge-base-en-v1.5`, while shared `Settings` exposes `EMBEDDING_MODEL_ID`. These names should be synchronized before production deployment.
+
+## Running The RAG Pipeline
 
 From the project root:
 
@@ -111,42 +268,40 @@ From the project root:
 python -m research_agent.rag_system_update.main
 ```
 
-This starts the update-package RAG flow and exercises the active document handler implementation.
+The current CLI prompts for a query, session ID, and top-k, then prints serialized retrieval results. Its directory discovery/indexing helpers are intended for test workflows; the core RAG API remains single-file.
 
-## Evaluation pipeline
+## Research-Paper Evaluation
 
-The project also includes a dedicated research-paper evaluation pack under [research_agent/rag_system_update/rag_evaluation_research_papers](research_agent/rag_system_update/rag_evaluation_research_papers), with its own documentation in [research_agent/rag_system_update/rag_evaluation_research_papers/README.md](research_agent/rag_system_update/rag_evaluation_research_papers/README.md).
+The evaluation code is under [research_agent/rag_system_update/rag_evaluation_research_papers](research_agent/rag_system_update/rag_evaluation_research_papers). Its intended source PDFs are under `research_agent/rag_system_update/Artificial_Intelligence/`.
 
-This folder is used to evaluate the live retrieval pipeline on a fixed set of AI research PDFs stored under:
+Important files:
 
-```text
-research_agent/rag_system_update/Artificial_Intelligence/
-```
+- `process_doc_and_query.py`: corpus processing, query execution, scoring, and report writing
+- `evaluate_retrieval.py`: source matching and per-query scoring
+- `eval_cases.json`: questions, expected source files, and relevant pages
+- `eval_cases.jsonl`: alternate JSONL benchmark format
+- `eval_results.json`: generated report
 
-The evaluation flow is:
-
-1. process the source directory and index all PDFs through `HybridRAG`
-2. load the evaluation cases from `eval_cases.json`
-3. run each question against the live retriever
-4. score whether the expected paper appears in the top-k results
-5. write the summary and per-case results to `eval_results.json`
-
-Run the evaluation from the project root with:
+Run it with:
 
 ```powershell
-python research_agent/rag_system_update/rag_evaluation_research_papers/process_doc_and_query.py
+python -m research_agent.rag_system_update.rag_evaluation_research_papers.process_doc_and_query
 ```
 
-Key files in the evaluation pack include:
+The evaluator checks whether normalized `source` or `filename` metadata matches the expected source. It reports:
 
-- `process_doc_and_query.py` — main orchestration, source indexing, retrieval, evaluation loop, JSON output
-- `evaluate_retrieval.py` — score one result set against an expected source paper
-- `eval_cases.json` — the benchmark questions and expected source documents
-- `eval_results.json` — generated result summary for the latest run
+- `precision@k`
+- `hits@k`
+- `misses@k`
+- matched and unmatched result lists
 
-## Research workflow
+Recall is intentionally not reported because the benchmark does not know the total number of relevant documents in the vector database. The evaluation package uses `HybridRAG` and should not bypass the active ingestion/retrieval engine.
 
-The broader project still follows the same high-level pattern:
+Current implementation note: `process_source_directory()` creates the session RAG engine, but its loop over `Artificial_Intelligence/*.pdf` is currently commented out. Uncomment or restore that loop before expecting a fresh evaluation run to index the benchmark corpus.
+
+## Research Workflow
+
+The broader Research Agent still follows this high-level pattern:
 
 1. classify whether a request is in scope
 2. plan a research path when needed
@@ -154,9 +309,42 @@ The broader project still follows the same high-level pattern:
 4. index and query uploaded documents using the RAG pipeline
 5. synthesize a final answer with citations and source grounding
 
+The RAG package supplies grounded evidence; the broader agent is responsible for planning, tool use, synthesis, and final response generation.
+
+## Logging
+
+The local pipeline prints progress markers such as:
+
+```text
+[RAG][DOCUMENT]       source loading
+[RAG][CHUNKING]       chunk creation
+[RAG][EMBEDDING]      embedding batches
+[RAG][VECTOR STORE]   Chroma writes/deletes
+[RAG][BM25]           lexical index state
+[RAG][QUERY]          incoming query
+[RAG][RETRIEVAL]      dense and lexical counts
+[RAG][RRF]            fusion count
+[RAG][CROSS ENCODER]  reranking
+[RAG][FINAL RANKING]  selected results
+```
+
+For production, route these events through structured logging and add latency, model failure, parser failure, empty-result, and candidate-count metrics.
+
+## Production Considerations
+
+- Pin compatible versions of Chroma, LangChain, PyMuPDF, `pymupdf4llm`, `pypdf`, and `sentence-transformers`.
+- Decide whether model downloads are allowed; otherwise pre-cache models and enable local-only settings.
+- Validate and sanitize session IDs and uploaded filenames.
+- Add file-size, page-count, timeout, and memory limits for PDF parsing.
+- Enable an explicit OCR path for scanned PDFs; the current markdown conversion uses `use_ocr=False`.
+- Add concurrency control around same-file replacement and simultaneous writes.
+- Rebuild BM25 consistently after process restarts, as the current implementation does from session Chroma documents.
+- Add tests for session isolation, overwrite behavior, UUID stability, malformed PDFs, empty documents, and unavailable models.
+- Evaluate content relevance in addition to filename matching before relying on benchmark scores for release decisions.
+
 ## Notes
 
-- The project keeps a separation between document parsing and retrieval logic.
-- The document loader is intentionally strict about file type support.
+- The project keeps document parsing and retrieval logic separate.
+- The document loader is intentionally strict about file types.
 - The PDF handler is the only file-type-specific branch in the current update structure.
-- The older `rag_system` package remains as a legacy reference and should not be treated as the active implementation unless the project intentionally chooses to revert.
+- The legacy `rag_system` package remains available as a reference but should not be treated as the active implementation unless intentionally selected.

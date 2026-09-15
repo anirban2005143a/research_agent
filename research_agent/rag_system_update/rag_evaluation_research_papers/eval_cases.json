@@ -1,402 +1,516 @@
 [
   {
     "id": "01-01",
-    "question": "What problem makes traditional GPU implementations of counterfactual regret minimization slower than optimized CPU code?",
+    "question": "Why does GPU-CFR compile a fixed game tree into a static dataflow representation?",
     "expected_source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Kernel launches and framework dispatch dominate because a CFR iteration performs millions of small, interdependent gather/scatter operations.",
-    "topic": "GPU-CFR"
+    "relevant_pages": [
+      3
+    ],
+    "reference_answer": "Because for a fixed game, shapes, indices, and buffer addresses do not change; compiling them once removes repeated framework dispatch and data-structure overhead.",
+    "expected_page": 3
   },
   {
     "id": "01-02",
-    "question": "What is the main idea behind GPU-CFR?",
+    "question": "What is static chance folding in GPU-CFR?",
     "expected_source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Compile a fixed game once into static dataflow so only solver state changes between iterations.",
-    "topic": "GPU-CFR"
+    "relevant_pages": [
+      7
+    ],
+    "reference_answer": "It precomputes the product of chance probabilities along each root-to-node path and folds those fixed values into a template because chance behavior is strategy-independent.",
+    "expected_page": 7
   },
   {
     "id": "01-03",
-    "question": "What does CUDA Graph Replay contribute to GPU-CFR?",
+    "question": "How does CUDA Graph Replay reduce the per-iteration overhead of GPU-CFR?",
     "expected_source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-    "relevant_pages": [],
-    "reference_answer": "It records the iteration once and replays it with a single graph launch, reducing repeated framework launch overhead.",
-    "topic": "GPU-CFR"
+    "relevant_pages": [
+      9
+    ],
+    "reference_answer": "It records the fixed sequence of operations once and replays it with one graph launch per iteration instead of repeatedly paying per-kernel launch and dispatcher overhead.",
+    "expected_page": 9
   },
   {
     "id": "01-04",
-    "question": "How much faster is GPU-CFR reported to be than the fastest prior GPU CFR on the same A100?",
+    "question": "What is the significance of the D dependency-respecting groups in GPU-CFR?",
     "expected_source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-    "relevant_pages": [],
-    "reference_answer": "It reports 29.8–80.4× speedups across the eight-game suite, with a median of about 40×.",
-    "topic": "GPU-CFR"
+    "relevant_pages": [
+      11
+    ],
+    "reference_answer": "They partition the computation into the minimum number of dependency-respecting execution groups, making the number of operator invocations scale as c1 + c2D rather than with the full tree size.",
+    "expected_page": 11
   },
   {
     "id": "01-05",
-    "question": "What are the main static structures compiled by GPU-CFR?",
+    "question": "How is the correctness of the optimized GPU-CFR implementation verified?",
     "expected_source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Flat edge and information-set arrays, precomputed indices, and depth-level batched passes.",
-    "topic": "GPU-CFR"
+    "relevant_pages": [
+      26
+    ],
+    "reference_answer": "It is verified through layered regression comparisons, independent solvers and exact best responses, analytic poker cases, and a 499-test implementation suite.",
+    "expected_page": 26
   },
   {
     "id": "02-01",
-    "question": "What is the central limitation of existing concept-shift definitions identified by the paper?",
+    "question": "Why does support mismatch make the conventional definition of concept shift problematic?",
     "expected_source": "02_General Quantification of Covariate and Concept Shifts.pdf",
-    "relevant_pages": [],
-    "reference_answer": "They can break when source and target supports mismatch.",
-    "topic": "General Quantification"
+    "relevant_pages": [
+      2
+    ],
+    "reference_answer": "If target covariate support contains points outside the source support, the source conditional label distribution is not defined there, so the usual Y|X comparison becomes ill-defined and its error bounds cannot be estimated reliably.",
+    "expected_page": 2
   },
   {
     "id": "02-02",
-    "question": "What new notion of concept shift does the paper introduce?",
+    "question": "What is the main role of γ*-concept shifts in the paper?",
     "expected_source": "02_General Quantification of Covariate and Concept Shifts.pdf",
-    "relevant_pages": [],
-    "reference_answer": "The paper introduces the gamma-star concept shift, written γ*-concept shift.",
-    "topic": "General Quantification"
+    "relevant_pages": [
+      1,
+      5
+    ],
+    "reference_answer": "They provide a support-aware way to quantify conditional-label differences and allow the paper to derive a general learning bound that unifies covariate shift and concept shift.",
+    "expected_page": 5
   },
   {
     "id": "02-03",
-    "question": "What mathematical framework is used to define γ*-concept shifts?",
+    "question": "What does the General Learning Bound in Theorem 3.13 provide?",
     "expected_source": "02_General Quantification of Covariate and Concept Shifts.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Entropic optimal transport is used.",
-    "topic": "General Quantification"
+    "relevant_pages": [
+      5
+    ],
+    "reference_answer": "It gives a general cross-domain error bound combining covariate-distribution mismatch and γ*-concept shift for broad loss functions, label spaces, and stochastic labeling.",
+    "expected_page": 5
   },
   {
     "id": "02-04",
-    "question": "What is the purpose of the DataShifts algorithm?",
+    "question": "What is DataShifts intended to do?",
     "expected_source": "02_General Quantification of Covariate and Concept Shifts.pdf",
-    "relevant_pages": [],
-    "reference_answer": "It quantifies distribution shifts and estimates the resulting generalization error bound.",
-    "topic": "General Quantification"
+    "relevant_pages": [
+      1,
+      8
+    ],
+    "reference_answer": "DataShifts quantifies distribution shifts from data and estimates the resulting learning-error bound in practical applications.",
+    "expected_page": 1
   },
   {
     "id": "02-05",
-    "question": "What two types of distribution shift does the proposed error bound unify?",
+    "question": "What does the paper derive about the Lipschitz constant of a softmax model?",
     "expected_source": "02_General Quantification of Covariate and Concept Shifts.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Covariate shift and γ*-concept shift.",
-    "topic": "General Quantification"
+    "relevant_pages": [
+      36,
+      38
+    ],
+    "reference_answer": "It derives an upper-bound formulation for the global L2-Lipschitz constant using the softmax Jacobian and an optimization-based quantity called LSDP.",
+    "expected_page": 38
   },
   {
     "id": "03-01",
-    "question": "Which models are compared for edge-deployable species identification?",
+    "question": "Why does the paper focus on 2–8B parameter vision-language models for camera-trap species identification?",
     "expected_source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Qwen3-VL 2B/4B/8B, Gemma3 4B, and the specialist BioCLIP baseline.",
-    "topic": "Edge VLM"
+    "relevant_pages": [
+      2
+    ],
+    "reference_answer": "Because camera traps are often deployed on edge hardware with limited connectivity, making 2–8B models a practically relevant range for on-device inference.",
+    "expected_page": 2
   },
   {
     "id": "03-02",
-    "question": "How does field imagery affect model performance compared with clean iNaturalist photographs?",
+    "question": "How did BioCLIP compare with the four edge-deployable VLMs on the clean-domain evaluation?",
     "expected_source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Performance drops sharply, with domain gaps of 9.6–26.6 percentage points.",
-    "topic": "Edge VLM"
+    "relevant_pages": [
+      4
+    ],
+    "reference_answer": "BioCLIP achieved 89.7% pooled accuracy, outperforming Qwen3-VL 8B, 2B, 4B, and Gemma3 4B by 33.2, 50.5, 53.0, and 59.2 percentage points, respectively.",
+    "expected_page": 4
   },
   {
     "id": "03-03",
-    "question": "Which model substantially outperforms every tested VLM?",
+    "question": "What image treatments were used when evaluating the VLMs?",
     "expected_source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "BioCLIP.",
-    "topic": "Edge VLM"
+    "relevant_pages": [
+      4
+    ],
+    "reference_answer": "The images were evaluated as cropped images, original full frames, and boxed full frames with a bounding box overlaid.",
+    "expected_page": 4
   },
   {
     "id": "03-04",
-    "question": "What does the paper suggest is the main reason for BioCLIP’s advantage?",
+    "question": "What explains the clean-to-camera-trap accuracy drop according to the paper?",
     "expected_source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Specialized training data rather than simply having a larger model scale.",
-    "topic": "Edge VLM"
+    "relevant_pages": [
+      6
+    ],
+    "reference_answer": "The drop is attributed mainly to general image-legibility problems such as blur, low light, and partial framing rather than a failure of fine-grained taxonomic discrimination.",
+    "expected_page": 6
   },
   {
     "id": "03-05",
-    "question": "What does the study conclude about clean-to-field degradation?",
+    "question": "What is the main conclusion about BioCLIP's advantage over the VLMs?",
     "expected_source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "The degradation appears related to the image-quality/domain shift rather than being unique to general-purpose VLMs.",
-    "topic": "Edge VLM"
+    "relevant_pages": [
+      7
+    ],
+    "reference_answer": "Its much smaller model still substantially outperforms the tested VLMs, indicating that specialized biological training data, rather than raw model scale, is the main source of its advantage.",
+    "expected_page": 7
   },
   {
     "id": "04-01",
-    "question": "What is Generative Marketing Mix Modeling designed to estimate?",
+    "question": "What are Generative Engine Optimization (GEO) and Generative Engine Marketing (GEM) in the GMMM framework?",
     "expected_source": "04_Generative Marketing Mix Modeling_ A Causal Inference Framework Linking GEO and GEM to Business Impact.pdf",
-    "relevant_pages": [],
-    "reference_answer": "The causal effects of Generative Engine Optimization (GEO) and Generative Engine Marketing (GEM).",
-    "topic": "GMMM"
+    "relevant_pages": [
+      2
+    ],
+    "reference_answer": "GEO changes source material to influence generated answers, while GEM uses sponsored placements in generated answers to reach customers.",
+    "expected_page": 2
   },
   {
     "id": "04-02",
-    "question": "What additional information does GMMM use for GEO?",
+    "question": "What additional inputs does GMMM construct for GEO and GEM?",
     "expected_source": "04_Generative Marketing Mix Modeling_ A Causal Inference Framework Linking GEO and GEM to Business Impact.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Repeated generated answers, question counts, shares of use across generative systems, and notice probabilities.",
-    "topic": "GMMM"
+    "relevant_pages": [
+      5,
+      7
+    ],
+    "reference_answer": "For GEO it constructs expected generated-answer counts using question volume, system shares, and notice probabilities; for GEM it uses sponsored-placement records together with notice probabilities.",
+    "expected_page": 5
   },
   {
     "id": "04-03",
-    "question": "How does GMMM represent GEM exposure?",
+    "question": "How do the plug-in, cut, and joint Bayesian procedures differ in GMMM?",
     "expected_source": "04_Generative Marketing Mix Modeling_ A Causal Inference Framework Linking GEO and GEM to Business Impact.pdf",
-    "relevant_pages": [],
-    "reference_answer": "It combines records of sponsored placements with notice probabilities.",
-    "topic": "GMMM"
+    "relevant_pages": [
+      9,
+      10
+    ],
+    "reference_answer": "They differ in how uncertainty in measurement parameters is handled and whether the response data are allowed to update those parameters.",
+    "expected_page": 9
   },
   {
     "id": "04-04",
-    "question": "What standard marketing technique is extended by the paper?",
+    "question": "What is required to identify the treatment effect of GEO?",
     "expected_source": "04_Generative Marketing Mix Modeling_ A Causal Inference Framework Linking GEO and GEM to Business Impact.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Marketing mix modeling (MMM), augmented for generative-engine exposure and causal inference.",
-    "topic": "GMMM"
+    "relevant_pages": [
+      11
+    ],
+    "reference_answer": "Identification requires statistical variation in the response model plus observations and treatment assignments that support evaluating the expected response under the relevant treatment sequences.",
+    "expected_page": 11
   },
   {
     "id": "04-05",
-    "question": "What kinds of product-recommendation answers are used in the empirical simulation?",
+    "question": "How is the causal GEO effect constructed from the response model?",
     "expected_source": "04_Generative Marketing Mix Modeling_ A Causal Inference Framework Linking GEO and GEM to Business Impact.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Simulated recommendation answers in English and Japanese.",
-    "topic": "GMMM"
+    "relevant_pages": [
+      16
+    ],
+    "reference_answer": "The effect is obtained by subtracting the conditional means under two treatment sequences; terms unaffected by GEO cancel, leaving the GEO source-state term, the change in the GEO input, and their interaction.",
+    "expected_page": 16
   },
   {
     "id": "05-01",
-    "question": "What is an artificial id in the paper?",
+    "question": "What is an artificial id in the proposed agent architecture?",
     "expected_source": "05_Artificial Id_ Drive and Persistent Alignment in Agentic AI.pdf",
-    "relevant_pages": [],
-    "reference_answer": "An adaptive internal drive for determining whether an agent should continue, stop, or change behavior.",
-    "topic": "Artificial ID"
+    "relevant_pages": [
+      2
+    ],
+    "reference_answer": "It is an architectural component that provides an adaptive internal drive for deciding whether behavior should continue, stop, or change.",
+    "expected_page": 2
   },
   {
     "id": "05-02",
-    "question": "What mechanism allows the minimal controller to develop useful control?",
+    "question": "How does the artificial id differ functionally from the ego?",
     "expected_source": "05_Artificial Id_ Drive and Persistent Alignment in Agentic AI.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Differential persistence.",
-    "topic": "Artificial ID"
+    "relevant_pages": [
+      2,
+      3
+    ],
+    "reference_answer": "The ego reasons about how to accomplish a supplied objective, whereas the artificial id supplies the adaptive drive that determines what pursuit should continue, stop, or change.",
+    "expected_page": 2
   },
   {
     "id": "05-03",
-    "question": "What risk arises when adaptive persistence carries across task boundaries?",
+    "question": "What happens in World 3 of the virtual Petri-dish experiment?",
     "expected_source": "05_Artificial Id_ Drive and Persistent Alignment in Agentic AI.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Misalignment, corrupted state, and unintended behavior can persist across task boundaries.",
-    "topic": "Artificial ID"
+    "relevant_pages": [
+      5,
+      7
+    ],
+    "reference_answer": "The left-right food-sensor mapping is reversed; a frozen controller retains the obsolete mapping and performs poorly, while an adaptive population learns a replacement and recovers occupancy.",
+    "expected_page": 7
   },
   {
     "id": "05-04",
-    "question": "What does the proposed persistent alignment boundary need to cover?",
+    "question": "Why does persistent agency change the unit of alignment?",
     "expected_source": "05_Artificial Id_ Drive and Persistent Alignment in Agentic AI.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Trusted observations, consequence channels, persistent state, authority, identity, provenance, and hard constraints.",
-    "topic": "Artificial ID"
+    "relevant_pages": [
+      10,
+      11
+    ],
+    "reference_answer": "Because consequential state can survive the end of a single trajectory, alignment must remain valid across persistent state, memory, observations, tools, actions, and continued adaptation of the agent.",
+    "expected_page": 10
   },
   {
     "id": "05-05",
-    "question": "What central control problem does the paper associate with increasingly persistent agentic AI?",
+    "question": "Which controls should remain outside the adaptive drive?",
     "expected_source": "05_Artificial Id_ Drive and Persistent Alignment in Agentic AI.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Controlling objectives, retries, verification, stopping rules, and behavioral transitions as the system continues and adapts across tasks.",
-    "topic": "Artificial ID"
+    "relevant_pages": [
+      14
+    ],
+    "reference_answer": "The drive should not control permission expansion, credential creation, provenance rewriting, action-log deletion, or authorization of irreversible actions; these controls should remain deterministic and auditable.",
+    "expected_page": 14
   },
   {
     "id": "06-01",
-    "question": "What does the paper mean by evidence-bounded deployment?",
+    "question": "What is the rupture test in the paper?",
     "expected_source": "06_From Protocols to Evidence_ Bounded Claims for AI in Service of the Common Good.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Deployment where claims are limited to what has actually been evaluated.",
-    "topic": "Bounded Claims"
+    "relevant_pages": [
+      2
+    ],
+    "reference_answer": "It identifies the institutional or relational failure preceding deployment, specifies the relevant human and non-AI baseline, and tests whether the AI system repairs, compounds, substitutes for, or conceals that failure.",
+    "expected_page": 2
   },
   {
     "id": "06-02",
-    "question": "What is measurement-bounded governance?",
+    "question": "What does evidence-bounded deployment mean?",
     "expected_source": "06_From Protocols to Evidence_ Bounded Claims for AI in Service of the Common Good.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Recording constraints that favorable evidence cannot override.",
-    "topic": "Bounded Claims"
+    "relevant_pages": [
+      3,
+      5
+    ],
+    "reference_answer": "Deployment claims must not exceed the evidence actually collected; evidence gaps, conflicts, and expiry conditions should be recorded and can trigger qualification, more evaluation, remediation, or withdrawal.",
+    "expected_page": 3
   },
   {
     "id": "06-03",
-    "question": "What four dimensions does RISE AI stand for?",
+    "question": "What is measurement-bounded governance?",
     "expected_source": "06_From Protocols to Evidence_ Bounded Claims for AI in Service of the Common Good.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Responsibility, Inclusivity, Safety, and Empowerment.",
-    "topic": "Bounded Claims"
+    "relevant_pages": [
+      4
+    ],
+    "reference_answer": "It records explicit constraints that favorable evidence cannot override, such as prohibited uses, non-offsettable exclusions, and human relationships or capabilities that a system may not substitute away.",
+    "expected_page": 4
   },
   {
     "id": "06-04",
-    "question": "What is the purpose of the rupture test?",
+    "question": "What does RISE AI stand for and what is its purpose?",
     "expected_source": "06_From Protocols to Evidence_ Bounded Claims for AI in Service of the Common Good.pdf",
-    "relevant_pages": [],
-    "reference_answer": "To link institutional baselines and failures with system evaluation.",
-    "topic": "Bounded Claims"
+    "relevant_pages": [
+      1,
+      3
+    ],
+    "reference_answer": "RISE represents Responsibility, Inclusivity, Safety, and Empowerment; it provides an architecture for making bounded, evidence-based claims explicit, including what is claimed, what evidence supports it, who has authority, and what remains unresolved.",
+    "expected_page": 1
   },
   {
     "id": "06-05",
-    "question": "Which major AI governance frameworks are discussed as examples of moving from principles to protocols?",
+    "question": "Why can faster processing still fail an empowerment claim in the public-benefits example?",
     "expected_source": "06_From Protocols to Evidence_ Bounded Claims for AI in Service of the Common Good.pdf",
-    "relevant_pages": [],
-    "reference_answer": "The EU AI Act, NIST AI RMF, and ISO/IEC 42001, along with assurance practices.",
-    "topic": "Bounded Claims"
+    "relevant_pages": [
+      5
+    ],
+    "reference_answer": "Faster decisions may be accompanied by reduced access to caseworkers, so the AI could conceal or compound an institutional rupture rather than improve meaningful contestability and human capability.",
+    "expected_page": 5
   },
   {
     "id": "07-01",
-    "question": "What five topological properties does MindTopo evaluate?",
+    "question": "What makes a property topological according to MindTopo?",
     "expected_source": "07_MindTopo_ Can Foundation Models Reason in Topological Space_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Continuity, separation, order, enclosure, and knots.",
-    "topic": "MindTopo"
+    "relevant_pages": [
+      4
+    ],
+    "reference_answer": "A topological property remains unchanged under continuous deformation, formally satisfying Φ(X) = Φ(X') when X and X' are related by ambient isotopy.",
+    "expected_page": 4
   },
   {
     "id": "07-02",
-    "question": "How many instances are in the MindTopo benchmark?",
+    "question": "What five topological properties does the MindTopo benchmark evaluate?",
     "expected_source": "07_MindTopo_ Can Foundation Models Reason in Topological Space_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "11,030 instances.",
-    "topic": "MindTopo"
+    "relevant_pages": [
+      1,
+      3
+    ],
+    "reference_answer": "The benchmark evaluates continuity, separation, order, enclosure, and knots.",
+    "expected_page": 3
   },
   {
     "id": "07-03",
-    "question": "How many procedurally generated task types are included?",
+    "question": "How does MindTopo operationalize the concept of separation?",
     "expected_source": "07_MindTopo_ Can Foundation Models Reason in Topological Space_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "13 task types.",
-    "topic": "MindTopo"
+    "relevant_pages": [
+      5
+    ],
+    "reference_answer": "It tests whether adjacent units can be distinguished as separate objects, using an Assembly reasoning task and a One-Stroke planning task that separates same-colored regions.",
+    "expected_page": 5
   },
   {
     "id": "07-04",
-    "question": "How do MLLMs generally perform on reasoning versus planning in MindTopo?",
+    "question": "Which model has the strongest overall performance pattern across the MindTopo topological properties in the main benchmark table?",
     "expected_source": "07_MindTopo_ Can Foundation Models Reason in Topological Space_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Every MLLM performs better on reasoning than on planning.",
-    "topic": "MindTopo"
+    "relevant_pages": [
+      7
+    ],
+    "reference_answer": "GPT-5.6-Sol is the strongest listed proprietary model across several properties, leading continuity and showing particularly high performance on the benchmark's topological tasks.",
+    "expected_page": 7
   },
   {
     "id": "07-05",
-    "question": "What happens when supervised fine-tuning and reinforcement learning are applied to Qwen3-VL-2B-Instruct?",
+    "question": "Why does the paper argue that a successful endpoint does not prove a topology-preserving rollout?",
     "expected_source": "07_MindTopo_ Can Foundation Models Reason in Topological Space_.pdf",
-    "relevant_pages": [],
-    "reference_answer": "They improve reasoning more than planning.",
-    "topic": "MindTopo"
+    "relevant_pages": [
+      13
+    ],
+    "reference_answer": "A generated trajectory can lose valid topological state transitions even if its final image satisfies the task oracle; therefore the process must be checked for topology-preserving validity throughout the rollout.",
+    "expected_page": 13
   },
   {
     "id": "08-01",
-    "question": "What three main signals form the hallucination-detection pipeline?",
+    "question": "What three inference signals does the hallucination-detection pipeline obtain from DeBERTa-v3?",
     "expected_source": "08_Domain-Specific Hallucination Detection in Large Language Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Fine-tuned DeBERTa-v3 classification, Monte Carlo Dropout uncertainty, and temperature-scaled calibration.",
-    "topic": "Hallucination Detection"
+    "relevant_pages": [
+      2
+    ],
+    "reference_answer": "It uses a single-pass score, an MC Dropout mean and variance, and a temperature-scaled calibrated score.",
+    "expected_page": 2
   },
   {
     "id": "08-02",
-    "question": "What F1 and AUROC does the pipeline achieve on general-domain HaluEval tasks?",
+    "question": "How much did MC Dropout improve hallucination-detection accuracy and F1?",
     "expected_source": "08_Domain-Specific Hallucination Detection in Large Language Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "F1 = 0.915 and AUROC = 0.977.",
-    "topic": "Hallucination Detection"
+    "relevant_pages": [
+      4
+    ],
+    "reference_answer": "Accuracy increased from 91.3% to 93.2%, while F1 increased from 0.915 to 0.931.",
+    "expected_page": 4
   },
   {
     "id": "08-03",
-    "question": "How does removing knowledge context affect summarization detection performance?",
+    "question": "Which HaluEval task was hardest for the fine-tuned DeBERTa detector and why?",
     "expected_source": "08_Domain-Specific Hallucination Detection in Large Language Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Summarization F1 drops by about 24%.",
-    "topic": "Hallucination Detection"
+    "relevant_pages": [
+      4
+    ],
+    "reference_answer": "Dialogue was hardest, with F1 = 0.82, because conversational responses are shorter, more implicit, and contain fewer lexical anchors to the knowledge source.",
+    "expected_page": 4
   },
   {
     "id": "08-04",
-    "question": "What hallucination-rate change is reported after DPO on the Qwen2.5-0.5B generator?",
+    "question": "What happened to the hallucination rate after DPO training of Qwen2.5-0.5B?",
     "expected_source": "08_Domain-Specific Hallucination Detection in Large Language Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "The detector-measured hallucination rate falls from 85.5% to 37.7%.",
-    "topic": "Hallucination Detection"
+    "relevant_pages": [
+      5
+    ],
+    "reference_answer": "The hallucination rate fell from 85.5% for the base model to 37.7% after DPO, a 55.9% relative reduction.",
+    "expected_page": 5
   },
   {
     "id": "08-05",
-    "question": "What does the SciFact cross-domain result imply?",
+    "question": "How well did the HaluEval-trained detector transfer zero-shot to SciFact?",
     "expected_source": "08_Domain-Specific Hallucination Detection in Large Language Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "General-domain training transfers poorly; domain-matched pretraining/fine-tuning performs better.",
-    "topic": "Hallucination Detection"
+    "relevant_pages": [
+      5
+    ],
+    "reference_answer": "It transferred poorly, achieving F1 = 0.517 and AUROC = 0.515, only slightly above chance.",
+    "expected_page": 5
   },
   {
     "id": "09-01",
-    "question": "What benchmark is introduced for adaptive hit discovery in CRISPR screens?",
+    "question": "What is the main idea behind ASSAYLOOP?",
     "expected_source": "09_Biology-in-the-loop_ Amortized Adaptive Hit Discovery in CRISPR Screens.pdf",
-    "relevant_pages": [],
-    "reference_answer": "ASSAYBENCH-LOOP.",
-    "topic": "ASSAYBENCH-LOOP"
+    "relevant_pages": [
+      3
+    ],
+    "reference_answer": "ASSAYLOOP learns a shared, history-conditioned acquisition policy from historical screens and combines it with LLM-derived biological priors to choose what to test next.",
+    "expected_page": 3
   },
   {
     "id": "09-02",
-    "question": "How many CRISPR screens does ASSAYBENCH-LOOP contain?",
+    "question": "Why are specialized metrics needed to evaluate adaptive hit discovery?",
     "expected_source": "09_Biology-in-the-loop_ Amortized Adaptive Hit Discovery in CRISPR Screens.pdf",
-    "relevant_pages": [],
-    "reference_answer": "1,389 CRISPR screens across five phenotype categories.",
-    "topic": "ASSAYBENCH-LOOP"
+    "relevant_pages": [
+      5
+    ],
+    "reference_answer": "Screen difficulty varies substantially, retrospective ground truth is incomplete, and LLM policies can hallucinate invalid gene names or return incomplete batches.",
+    "expected_page": 5
   },
   {
     "id": "09-03",
-    "question": "What is ASSAYLOOP?",
+    "question": "How does the ASSAYLOOP warm start compare with the standalone LLMs in the reported experiment?",
     "expected_source": "09_Biology-in-the-loop_ Amortized Adaptive Hit Discovery in CRISPR Screens.pdf",
-    "relevant_pages": [],
-    "reference_answer": "A sequential experimental-design framework combining an amortized acquisition policy with LLM-derived biological priors through an adaptive handoff.",
-    "topic": "ASSAYLOOP"
+    "relevant_pages": [
+      9
+    ],
+    "reference_answer": "The warm start reached EF ≈ 5.67, exceeding Gemini-3.1-Pro at 4.71, GPT-5.6 Sol at 4.81, and ASSAYFORMER alone at 4.83.",
+    "expected_page": 9
   },
   {
     "id": "09-04",
-    "question": "What is ASSAYFORMER trained to do?",
+    "question": "What does the directional gene-gene influence analysis mean?",
     "expected_source": "09_Biology-in-the-loop_ Amortized Adaptive Hit Discovery in CRISPR Screens.pdf",
-    "relevant_pages": [],
-    "reference_answer": "It is a transformer-based amortized acquisition policy trained across historical screens to adapt from experimental feedback.",
-    "topic": "ASSAYFORMER"
+    "relevant_pages": [
+      12,
+      13
+    ],
+    "reference_answer": "Influence is directional by construction: the effect of probe gene p on target gene g is a separate quantity from the effect of g on p, so the two need not have the same magnitude or sign.",
+    "expected_page": 13
   },
   {
     "id": "09-05",
-    "question": "What enrichment over random selection does ASSAYLOOP achieve on temporally held-out screens?",
+    "question": "What does the paper conclude about LLM in-context adaptation versus a trained adaptive policy?",
     "expected_source": "09_Biology-in-the-loop_ Amortized Adaptive Hit Discovery in CRISPR Screens.pdf",
-    "relevant_pages": [],
-    "reference_answer": "A 5.67-fold enrichment over random selection.",
-    "topic": "ASSAYLOOP"
+    "relevant_pages": [
+      15
+    ],
+    "reference_answer": "Frontier LLMs can use experimental feedback to some degree, but their in-context adaptation is limited compared with a policy explicitly trained for history-conditioned adaptation.",
+    "expected_page": 15
   },
   {
     "id": "10-01",
-    "question": "What regularizers do the linear recommendation-model leaders effectively add?",
+    "question": "What is the main claim of the paper about different nuclear-norm and Frobenius-norm regularizers?",
     "expected_source": "10_On the Regularization Landscape for the Linear Recommendation Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "A nuclear-norm-based regularizer or a Frobenius-norm-based regularizer.",
-    "topic": "Regularization Landscape"
+    "relevant_pages": [
+      5
+    ],
+    "reference_answer": "For the studied linear recommendation objective, the optimal solution uniformly shrinks the singular values by a constant magnitude for the considered nuclear-norm regularization family, giving equivalent learning power under the paper's formulation.",
+    "expected_page": 5
   },
   {
     "id": "10-02",
-    "question": "What property do nuclear-norm-based solutions have?",
+    "question": "What happens to recommendation accuracy as the rank k increases in the low-rank experiments?",
     "expected_source": "10_On the Regularization Landscape for the Linear Recommendation Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "They have a rigid structure, low-rank solutions, and closed-form solutions.",
-    "topic": "Regularization Landscape"
+    "relevant_pages": [
+      10
+    ],
+    "reference_answer": "Recommendation accuracy generally increases as the rank k increases, although the improvement can diminish.",
+    "expected_page": 10
   },
   {
     "id": "10-03",
-    "question": "Why are Frobenius-norm-based models more expressive and efficient for recommendation?",
+    "question": "What does the paper conclude about non-descending weight ordering in matrix factorization?",
     "expected_source": "10_On the Regularization Landscape for the Linear Recommendation Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "They are more expressive and efficient, although their solutions may be full-rank or require hard-to-tune numerical procedures such as ADMM.",
-    "topic": "Regularization Landscape"
+    "relevant_pages": [
+      11
+    ],
+    "reference_answer": "Sorting the weights into non-descending order substantially worsens recommendation performance, supporting the claim that strict weight ordering can be an inherent limitation.",
+    "expected_page": 11
   },
   {
     "id": "10-04",
-    "question": "What two new types of solutions does the paper propose?",
+    "question": "What is the closed-form solution for full-rank DLAE?",
     "expected_source": "10_On the Regularization Landscape for the Linear Recommendation Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Two low-rank, closed-form solutions derived by generalizing Frobenius-norm-based regularizers.",
-    "topic": "Regularization Landscape"
+    "relevant_pages": [
+      23
+    ],
+    "reference_answer": "The full-rank DLAE solution is W = (XᵀX + Λ)⁻¹XᵀX, where Λ is constructed from the regularization parameter and the diagonal of XᵀX.",
+    "expected_page": 23
   },
   {
     "id": "10-05",
-    "question": "What is the overall conclusion about the apparently different linear recommendation models?",
+    "question": "What are the three datasets used in the experimental evaluation of the linear recommendation models?",
     "expected_source": "10_On the Regularization Landscape for the Linear Recommendation Models.pdf",
-    "relevant_pages": [],
-    "reference_answer": "Their comparable performance can be understood through a common regularization framework involving nuclear or Frobenius norms.",
-    "topic": "Regularization Landscape"
+    "relevant_pages": [
+      10,
+      22,
+      24
+    ],
+    "reference_answer": "The experiments use ML-20M, Netflix, and MSD.",
+    "expected_page": 10
   }
 ]

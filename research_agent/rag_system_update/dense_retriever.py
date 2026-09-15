@@ -9,7 +9,7 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from ..config import settings
-from .data_models import RetrievedChunk
+from .data_types import RetrievedChunk
 
 
 _EMBEDDING_MODEL_ID = getattr(settings, "rag_embedding_model_id", "BAAI/bge-base-en-v1.5")
@@ -30,6 +30,9 @@ def _safe_collection_name(session_id: str) -> str:
     value = value[:50] or "default"
     return f"research_documents_{value}"
 
+def _chunk_id(document: Document) -> str:
+    metadata = document.metadata or {}
+    return str(metadata.get("chunk_id") or uuid.uuid4())
 
 class DenseRetriever:
     """Own the vector database and dense embedding operations."""
@@ -92,12 +95,9 @@ class DenseRetriever:
         results = self.vector_store.similarity_search_with_relevance_scores(query, k=limit)
         chunks: list[RetrievedChunk] = []
         for rank, (document, score) in enumerate(results, start=1):
-            chunk_id = document.metadata.get("chunk_id") if document.metadata else None
-            if not chunk_id:
-                chunk_id = str(uuid.uuid4())
             chunks.append(
                 RetrievedChunk(
-                    chunk_id=chunk_id,
+                    chunk_id=_chunk_id(document),
                     document=document,
                     retrieval_score=float(score),
                     dense_rank=rank,

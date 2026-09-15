@@ -1,6 +1,6 @@
 """Reciprocal Rank Fusion for dense and lexical result lists."""
 
-from .data_models import RetrievedChunk
+from .data_types import RetrievedChunk
 
 
 class RRFRanker:
