@@ -196,8 +196,6 @@ def main() -> None:
     # ---------------------------------------------------------
     # Display results
     # ---------------------------------------------------------
-    print(f"\n[RAG][RESULTS] {len(results)} results")
-
     print(results.model_dump_json(indent=2))
 
 

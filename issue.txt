@@ -26,3 +26,5 @@ ex: it should plan according to the tools and resourceswe have along with the ta
     d. a stronger measure than only filename matching
 
 11. need to check the combination of different scores
+
+12. duplicate chunk_id in metadata also in main chunk data.

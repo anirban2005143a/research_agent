@@ -74,12 +74,21 @@ def build_summary(rows: list[dict[str, Any]], k: int) -> dict[str, Any]:
         else 0.0
     )
 
+    def average(metric: str) -> float:
+        return sum(float(row[metric]) for row in rows) / total_cases if total_cases else 0.0
+
     return {
         "num_cases": total_cases,
         "k": k,
         "average_precision@k": average_precision,
+        "average_source_precision@k": average("source_precision@k"),
+        "average_exact_page_precision@k": average("exact_page_precision@k"),
+        "average_tolerant_page_precision@k": average("tolerant_page_precision@k"),
+        "average_weighted_score@k": average("weighted_score@k"),
         "total_hits@k": total_hits,
         "total_misses@k": total_misses,
+        "total_exact_page_hits@k": sum(int(row["exact_page_hits@k"]) for row in rows),
+        "total_tolerant_page_hits@k": sum(int(row["tolerant_page_hits@k"]) for row in rows),
         "average_hits@k": total_hits / total_cases if total_cases else 0.0,
         "average_misses@k": total_misses / total_cases if total_cases else 0.0,
     }
@@ -99,19 +108,36 @@ def evaluate_test_case(
     """Run one evaluation test_case: retrieve results for the question, then score the result set."""
     query = test_case["question"]
     expected_source = test_case["expected_source"]
+    expected_page = test_case.get("expected_page")
+    relevant_pages = test_case.get("relevant_pages", [])
     results = rag.retrieve(query, k=k)
-    score = evaluate_single_query(results, expected_source, k=k)
+    score = evaluate_single_query(
+        results,
+        expected_source,
+        expected_page=expected_page,
+        relevant_pages=relevant_pages,
+        k=k,
+    )
 
     return {
         "id": test_case.get("id"),
         "question": query,
         "expected_source": expected_source,
-        "relevant_pages": test_case.get("relevant_pages", []),
+        "expected_page": expected_page,
+        "relevant_pages": relevant_pages,
         "precision@k": score["precision@k"],
+        "source_precision@k": score["source_precision@k"],
+        "exact_page_precision@k": score["exact_page_precision@k"],
+        "tolerant_page_precision@k": score["tolerant_page_precision@k"],
+        "weighted_score@k": score["weighted_score@k"],
         "hits@k": score["hits@k"],
         "misses@k": score["misses@k"],
+        "exact_page_hits@k": score["exact_page_hits@k"],
+        "tolerant_page_hits@k": score["tolerant_page_hits@k"],
         "matched_results": [_serialize_chunk(result) for result in score["matched_results"]],
         "unmatched_results": [_serialize_chunk(result) for result in score["unmatched_results"]],
+        "exact_page_results": [_serialize_chunk(result) for result in score["exact_page_results"]],
+        "tolerant_page_results": [_serialize_chunk(result) for result in score["tolerant_page_results"]],
     }
 
 
