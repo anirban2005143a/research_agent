@@ -30,6 +30,7 @@ def _serialize_chunk(chunk: RetrievedChunk) -> dict[str, Any]:
         "metadata": {
             **dict(chunk.document.metadata),
             "chunk_id": chunk.chunk_id,
+            "similarity_score": round(chunk.similarity_score, 6),
             "score": round(chunk.final_score, 6),
             "rrf_score": round(chunk.rrf_score, 6),
             "cross_encoder_score": round(chunk.cross_encoder_score, 6),

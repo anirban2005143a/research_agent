@@ -11,6 +11,7 @@ class RetrievedChunk(BaseModel):
 
     chunk_id: str
     document: Document
+    similarity_score: float = 0.0
     retrieval_score: float = 0.0
     rrf_score: float = 0.0
     rrf_normalized: float = 0.0
