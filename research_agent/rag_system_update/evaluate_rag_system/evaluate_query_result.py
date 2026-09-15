@@ -72,7 +72,6 @@ def page_match(
 def evaluate_single_query(
     results: SearchResults,
     expected_source: str,
-    k: int = 5,
     expected_page: int | None = None,
     relevant_pages: list[int] | None = None,
     page_tolerance: int = DEFAULT_PAGE_TOLERANCE,
@@ -87,7 +86,7 @@ def evaluate_single_query(
     if page_tolerance < 0:
         raise ValueError("page_tolerance must be non-negative")
 
-    top_k_results = results.results[:k]
+    top_k_results = results.results
     matched_results = []
     unmatched_results = []
     exact_page_results = []

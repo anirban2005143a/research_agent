@@ -22,23 +22,6 @@ SESSION_ID = "paper_eval_session"
 RESULTS_PATH = Path(__file__).resolve().parent / "eval_results.json"
 _CACHE: HybridRAG | None = None
 
-
-def _serialize_chunk(chunk: RetrievedChunk) -> dict[str, Any]:
-    """Convert an internal chunk model to the public JSON result shape."""
-    return {
-        "content": chunk.document.page_content,
-        "metadata": {
-            **dict(chunk.document.metadata),
-            "chunk_id": chunk.chunk_id,
-            "similarity_score": round(chunk.similarity_score, 6),
-            "score": round(chunk.final_score, 6),
-            "rrf_score": round(chunk.rrf_score, 6),
-            "cross_encoder_score": round(chunk.cross_encoder_score, 6),
-        },
-    }
-
-
-
 def load_test_cases(cases_path: str | Path) -> list[dict[str, Any]]:
     """Load the evaluation questions from the JSON file."""
     cases_file = Path(cases_path)
@@ -135,10 +118,10 @@ def evaluate_test_case(
         "misses@k": score["misses@k"],
         "exact_page_hits@k": score["exact_page_hits@k"],
         "tolerant_page_hits@k": score["tolerant_page_hits@k"],
-        "matched_results": [_serialize_chunk(result) for result in score["matched_results"]],
-        "unmatched_results": [_serialize_chunk(result) for result in score["unmatched_results"]],
-        "exact_page_results": [_serialize_chunk(result) for result in score["exact_page_results"]],
-        "tolerant_page_results": [_serialize_chunk(result) for result in score["tolerant_page_results"]],
+        "matched_results": [result for result in score["matched_results"]],
+        "unmatched_results": [result for result in score["unmatched_results"]],
+        "exact_page_results": [result for result in score["exact_page_results"]],
+        "tolerant_page_results": [result for result in score["tolerant_page_results"]],
     }
 
 
