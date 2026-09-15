@@ -100,7 +100,6 @@ class DenseRetriever:
                     chunk_id=_chunk_id(document),
                     document=document,
                     similarity_score=float(score),
-                    retrieval_score=float(score),
                     dense_rank=rank,
                 )
             )
