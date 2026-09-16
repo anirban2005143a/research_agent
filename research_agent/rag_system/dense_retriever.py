@@ -55,10 +55,10 @@ class DenseRetriever:
         )
 
     def has_file(self, file_path: str | Path) -> bool:
-        """Check the Chroma collection directly by the file basename from the input path."""
+        """Check whether chunks for the file basename exist in the Chroma collection."""
         filename = Path(file_path).name
         result = self.vector_store.get(
-            where={"filename": filename},
+            where={"source": filename},
             include=["metadatas"],
         )
         return bool(result.get("ids"))
@@ -67,7 +67,7 @@ class DenseRetriever:
         """Delete every chunk in the current session for the basename from the given file path."""
         filename = Path(file_path).name
         result = self.vector_store.get(
-            where={"filename": filename},
+            where={"source": filename},
             include=["metadatas"],
         )
         ids = result.get("ids") or []
@@ -81,7 +81,7 @@ class DenseRetriever:
         for start in range(0, total, batch_size):
             end = min(start + batch_size, total)
             batch = chunks[start:end]
-            print(f"[RAG][EMBEDDING] Embedding chunks {start + 1}-{end}/{total}")
+            print(f"[RAG][VECTOR STORE] Storing embeddgings of chunks {start + 1}-{end}/{total}")
             self.vector_store.add_documents(batch)
 
         print(f"[RAG][VECTOR STORE] Stored {total} chunks")
