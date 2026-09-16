@@ -293,7 +293,7 @@ class ResearchGraph:
             }
 
     def route_quality(self, state: ResearchState):
-        if state.get("iterations", 0) >= 2:
+        if state.get("iterations", 0) >= getattr(settings, "max_research_iterations", 2):
             return "end"
         try:
             return (
@@ -316,8 +316,9 @@ class ResearchGraph:
         return {"draft": str(answer)}
 
     def _invoke_llm(self, label: str, messages, model=None):
-        log(f"LLM {label} | throttle_sleep={settings.llm_call_delay_seconds}s")
-        time.sleep(settings.llm_call_delay_seconds)
+        delay_seconds = getattr(settings, "llm_call_delay_seconds", 20)
+        log(f"LLM {label} | throttle_sleep={delay_seconds}s")
+        time.sleep(delay_seconds)
         started = time.perf_counter()
         response = retry_call(lambda: (model or self.llm).invoke(messages), label)
         log(f"LLM {label} | response_time={time.perf_counter() - started:.2f}s | response_chars={len(str(getattr(response, 'content', response)))}")

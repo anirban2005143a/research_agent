@@ -32,3 +32,5 @@ ex: it should plan according to the tools and resourceswe have along with the ta
 13. remove the eval_cases.jsonl - done
 
 14. check duplicate entry in chroma
+
+15. weather the env variables matches with other files 

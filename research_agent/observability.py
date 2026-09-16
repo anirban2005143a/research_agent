@@ -14,13 +14,14 @@ def log(message: str) -> None:
 def retry_call(operation: Callable[[], T], label: str) -> T:
     """Retry one operation with the shared bounded retry policy."""
     last_error = None
-    for attempt in range(1, settings.max_retries + 1):
+    max_retries = getattr(settings, "max_retries", 3)
+    for attempt in range(1, max_retries + 1):
         try:
             return operation()
         except Exception as exc:
             last_error = exc
-            log(f"RETRY {label} | attempt={attempt}/{settings.max_retries} | error={exc!r}")
-            if attempt < settings.max_retries:
+            log(f"RETRY {label} | attempt={attempt}/{max_retries} | error={exc!r}")
+            if attempt < max_retries:
                 time.sleep(min(2 ** (attempt - 1), 8))
     raise last_error
 

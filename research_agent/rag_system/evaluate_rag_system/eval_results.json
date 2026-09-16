@@ -16,12 +16,12 @@
   },
   "test_cases": [
     {
-      "id": "01-01",
-      "question": "Why does GPU-CFR compile a fixed game tree into a static dataflow representation?",
-      "expected_source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-      "expected_page": 3,
+      "id": "03-05",
+      "question": "What is the main conclusion about BioCLIP's advantage over the VLMs?",
+      "expected_source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
+      "expected_page": 7,
       "relevant_pages": [
-        3
+        7
       ],
       "precision@k": 0.0,
       "source_precision@k": 1.0,
@@ -35,143 +35,158 @@
       "matched_results": [],
       "unmatched_results": [
         {
-          "chunk_id": "916dcad1-9841-47f9-9303-84408dbaa978",
+          "chunk_id": "c7d529ea-9916-4d00-ba37-888445db0fa6",
           "document": {
-            "id": null,
+            "id": "c7d529ea-9916-4d00-ba37-888445db0fa6",
             "metadata": {
-              "section_headings": [
-                "**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**",
-                "**1. Introduction**"
-              ],
-              "source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
+              "title": "Can Edge-Deployable Vision-Language Models Identify Species?",
               "author": [
-                "Boning Li",
-                "Longbo Huang"
-              ],
-              "title": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay"
-            },
-            "page_content": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay\n**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**\n**1. Introduction**\n\n<!-- Start of picture text -->\nOpenSpiel (Python CFR) Ours CPU (8 threads)<br>LiteEFG (C++, 1 thread) GPU-CFR (A100, eager)<br>Kim 2026 (A100, CuPy) GPU-CFR (A100, CUDA graph)<br>3<br>10<br>2<br>10<br>185× 213×<br>1<br>10<br>0<br>10<br>1<br>10<br>2<br>10<br>2 3 4 5<br>10 10 10 10<br>Game size (Infosets)<br>Time per solver iteration (ms)<br><!-- End of picture text -->  \n**Figure 1** | Steady-state time per CFR iteration versus game size (both axes logarithmic; lower is better); backends and variants as in Table 3.  \nTo remove these obstacles, we propose GPU-CFR, which treats a fixed game as a program to be compiled. GPU-CFR walks a game once (two players, zero-sum, perfect recall) and emits flat edge, information-set slot, and depth arrays. An iteration then becomes a fixed sequence of depth-level batched gather and scatter operations over those arrays. Three techniques shape the compiled iteration. Static chance folding moves all strategy-independent chance work to build time. Depth-level execution blocks collapse each traversal stage into one batched operation per tree level. A dual-lane reach buffer advances both players’ reach probabilities in a single operation, and a sentinel slot removes the last per-edge branch. The resulting sequence has fixed  \n2  \n**Compiling CFR to Static Dataflow and CUDA Graph Replay**  \nshapes, indices, and buffer addresses, so CUDA Graph Replay (NVIDIA Corporation, 2020) records it once and replays it with one graph launch per iteration. The design separates the two sources of run-time cost. The compiled representation reduces the work issued to the tensor framework, and graph replay reduces the cost of issuing it.  \nThe compiled iteration pays off most where the trees are largest. Figure 1 plots steady-state time per iteration against game size for every backend we test. The CPU libraries and the prior GPU implementation slow down as the tree grows. The graph-replayed GPU-CFR curve stays nearly flat, so the margin widens with scale. On one A100, a heads-up no-limit Texas hold’em (HUNL) turn subgame with 83,040 information sets (Infosets) runs at 0.397 ms per steady-state CFR<sup>+</sup> iteration. Against the matched A100 implementation of Kim (2026) (Kim & Sandholm, 2026), graph replay is 29.8–80.4× faster across the eight-game suite. Against LiteEFG (Liu et al., 2024), one of the fastest open-source CPU implementations, it is 14–258× faster on the four largest games. Most of this margin comes from the compiled representation itself: the same compiled solver on eight CPU threads already beats the A100 baseline by 2.2–51.1×. GPU-CFR in turn outperforms every CPU path we test, including that eight-thread arm and its one-socket scaling in Section 14.  \nWe answer three systems questions. (Q1) How can a full CFR iteration be compiled into fixed tensor dataflow while preserving its update semantics? (Q2) Which gains come from the compiled representation and which come from CUDA Graph Replay? (Q3) When does the lower iteration cost translate into lower wall-clock time for solution quality and for repeated solves? Our contributions are:  \n1. **A game-to-dataflow compiler for tabular CFR.** GPU-CFR maps a fixed game to flat arrays and a depth-level execution schedule, including static chance folding and a dual-lane reach representation (Figs. 2 and 3).  \n2. **CUDA Graph Replay with a causal performance decomposition.** We separate representation cost from framework dispatch and graph-launch cost through operation counts, eager/graph ablations, scaling, and repeated-solve measurements.  \n3. **State-of-the-art GPU performance for tabular CFR.** GPU-CFR runs 29.8–80.4× faster than the matched A100 baseline across the eight-game suite and outperforms every tested CPU path (Section 7).",
-            "type": "Document"
-          },
-          "similarity_score": 0.0,
-          "rrf_score": 0.01639344262295082,
-          "rrf_normalized": 0.5,
-          "cross_encoder_score": 0.9607850909233093,
-          "cross_encoder_normalized": 0.7232789658688503,
-          "final_score": 0.6136643013856379,
-          "dense_rank": null,
-          "lexical_rank": 1
-        },
-        {
-          "chunk_id": "e7047db4-1c30-40a5-b350-ce3a758b0b6f",
-          "document": {
-            "id": "8a318799-e9b9-4e7c-a5e3-d19d1bcf2dfa",
-            "metadata": {
-              "source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-              "title": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay",
-              "author": [
-                "Boning Li",
-                "Longbo Huang"
+                "William Zhou",
+                "Mayukha Siripuram",
+                "Xiao Yan",
+                "Ziqi Liu",
+                "Yi Ding"
               ],
               "section_headings": [
-                "**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**",
-                "**4. Compiling CFR onto Accelerators**"
-              ]
+                "**Can Edge-Deployable Vision–Language Models Identify Species?**",
+                "**3 Results**"
+              ],
+              "source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf"
             },
-            "page_content": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay\n**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**\n**4. Compiling CFR onto Accelerators**\n\n### **4. Compiling CFR onto Accelerators**  \nThe design follows one observation: once the game is fixed, the entire structure of a CFR iteration is known at build time, and only the numbers change. We therefore split the solver into a one-time _compilation_ of the game into flat arrays (Section 4.1) and a per-iteration _dataflow_ over those arrays whose operation sequence never changes (Section 4.2). The fixed sequence makes the iteration a legal target for CUDA-graph capture (Section 4.3). Figure 2 shows the pipeline on an 11-node example game with a chance root, two decisions per player, and six terminals, and Fig. 3 reuses the same game. A layered verification design checks the compiled schedule, graph replay, and evaluator (Section 4.4).",
+            "page_content": "Can Edge-Deployable Vision-Language Models Identify Species?\n**Can Edge-Deployable Vision–Language Models Identify Species?**\n**3 Results**\n\n## **3 Results**  \n**RQ1: edge-deployable VLMs vs. a specialist.** All four VLMs identify species far above the 1% chance rate, confirming real taxonomic knowledge in this size range – but BioCLIP substantially outperforms every VLM tested, by 33.2 points over the best (Qwen3-VL 8B) to 59.2 over the weakest (Tab. 1), holding in both domains (trap, cropped treatment – the only treatment BioCLIP was run on in this domain, so we restrict the VLM side of this specific comparison to the same treatment rather than Tab. 3’s pooled figure: 71.0% BioCLIP vs. 32.0% best VLM). Notably, BioCLIP achieves this despite being roughly 7–20 _×_  \n> 4 The 8B model (6.1 GB) exceeds 4 GB consumer laptop VRAM and spills to CPU (13–96 s/call vs. 1–40 s for smaller models) – itself a relevant data point for edge deployment, where 8B may already be impractical on the lowest-power hardware. A dedicated benchmark (Tab. 2) found 4B also exceeds this ceiling (5.6GB); only 2B is close to fitting (4.1GB).  \nCan Edge-Deployable VLMs Identify Species? 5  \n**Table 2:** Latency and peak GPU memory, one laptop, cropped/multiple-choice, _n_ =40/model. Latency is right-skewed for every VLM, tracking the CPU-spillover pattern noted above.  \n|Model (params)|Mean|Median|p90|Peak GPU mem.|\n|---|---|---|---|---|\n|BioCLIP (300M)|0.57s|0.56s|0.58s|N/A<sup>_†_</sup>|\n|Gemma3 4B|1.99s|1.76s|1.95s|4.1 GB|\n|Qwen3-VL 2B|19.40s|6.38s|50.11s|4.1 GB|\n|Qwen3-VL 4B|9.74s|4.86s|28.22s|5.6 GB|\n|Qwen3-VL 8B|30.04s|18.02s|103.29s|7.2 GB|  \n> _†_ Ran on CPU here, not GPU; footprint would be far below the VLMs’ even if GPU-resident, given 300M params.  \nsmaller than the VLMs we test (300M vs. 2–8B parameters), suggesting this advantage reflects BioCLIP’s specialized training data rather than model scale – a stronger, scale-independent claim than a size-matched comparison alone would support, and one that does not require testing larger VLMs to establish. Edgedeployable general-purpose VLMs do not yet substitute for a specialist at any scale or family we tested within this range.  \nPart of this gap is not purely taxonomic: BioCLIP, forced-choice, always returns an answer by construction, whereas generative VLMs can refuse, hedge, or answer off-list. This rate is uneven: on trap multiple-choice prompts, Qwen3VL 2B fails to answer 48.7% of items, versus 1.2–3.0% for 4B/8B and 0% (3.7– 4.3% off-list) for Gemma3 4B. Non-answers score as incorrect throughout, inflating BioCLIP’s advantage over weaker VLMs specifically; the Qwen3-VL 8B comparison, with the lowest failure rate, is least confounded.",
             "type": "Document"
           },
-          "similarity_score": 0.7912579546809428,
+          "similarity_score": 0.48780089828359685,
           "rrf_score": 0.01639344262295082,
           "rrf_normalized": 0.5,
-          "cross_encoder_score": 0.9385927319526672,
-          "cross_encoder_normalized": 0.718815308201503,
-          "final_score": 0.6117305084136645,
+          "cross_encoder_score": 0.8684584498405457,
+          "cross_encoder_normalized": 0.7044248322655099,
+          "final_score": 0.5656623219301277,
           "dense_rank": 1,
           "lexical_rank": null
         },
         {
-          "chunk_id": "bddfe64e-29cf-4694-a019-01c8683cef9e",
+          "chunk_id": "5dd4f753-c9a8-4653-8032-ebe57aaf383c",
           "document": {
-            "id": null,
+            "id": "5dd4f753-c9a8-4653-8032-ebe57aaf383c",
             "metadata": {
-              "source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
+              "source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
               "author": [
-                "Boning Li",
-                "Longbo Huang"
+                "William Zhou",
+                "Mayukha Siripuram",
+                "Xiao Yan",
+                "Ziqi Liu",
+                "Yi Ding"
               ],
-              "title": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay",
+              "title": "Can Edge-Deployable Vision-Language Models Identify Species?",
               "section_headings": [
-                "**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**",
-                "**1. Introduction**"
+                "**Can Edge-Deployable Vision–Language Models Identify Species?**",
+                "**4 Discussion, Limitations, and Conclusion**"
               ]
             },
-            "page_content": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay\n**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**\n**1. Introduction**\n\n<!-- Start of picture text -->\nOpenSpiel (Python CFR) Ours CPU (8 threads)<br>LiteEFG (C++, 1 thread) GPU-CFR (A100, eager)<br>Kim 2026 (A100, CuPy) GPU-CFR (A100, CUDA graph)<br>3<br>10<br>2<br>10<br>185× 213×<br>1<br>10<br>0<br>10<br>1<br>10<br>2<br>10<br>2 3 4 5<br>10 10 10 10<br>Game size (Infosets)<br>Time per solver iteration (ms)<br><!-- End of picture text -->  \n**Figure 1** | Steady-state time per CFR iteration versus game size (both axes logarithmic; lower is better); backends and variants as in Table 3.  \nTo remove these obstacles, we propose GPU-CFR, which treats a fixed game as a program to be compiled. GPU-CFR walks a game once (two players, zero-sum, perfect recall) and emits flat edge, information-set slot, and depth arrays. An iteration then becomes a fixed sequence of depth-level batched gather and scatter operations over those arrays. Three techniques shape the compiled iteration. Static chance folding moves all strategy-independent chance work to build time. Depth-level execution blocks collapse each traversal stage into one batched operation per tree level. A dual-lane reach buffer advances both players’ reach probabilities in a single operation, and a sentinel slot removes the last per-edge branch. The resulting sequence has fixed  \n2  \n**Compiling CFR to Static Dataflow and CUDA Graph Replay**  \nshapes, indices, and buffer addresses, so CUDA Graph Replay (NVIDIA Corporation, 2020) records it once and replays it with one graph launch per iteration. The design separates the two sources of run-time cost. The compiled representation reduces the work issued to the tensor framework, and graph replay reduces the cost of issuing it.  \nThe compiled iteration pays off most where the trees are largest. Figure 1 plots steady-state time per iteration against game size for every backend we test. The CPU libraries and the prior GPU implementation slow down as the tree grows. The graph-replayed GPU-CFR curve stays nearly flat, so the margin widens with scale. On one A100, a heads-up no-limit Texas hold’em (HUNL) turn subgame with 83,040 information sets (Infosets) runs at 0.397 ms per steady-state CFR<sup>+</sup> iteration. Against the matched A100 implementation of Kim (2026) (Kim & Sandholm, 2026), graph replay is 29.8–80.4× faster across the eight-game suite. Against LiteEFG (Liu et al., 2024), one of the fastest open-source CPU implementations, it is 14–258× faster on the four largest games. Most of this margin comes from the compiled representation itself: the same compiled solver on eight CPU threads already beats the A100 baseline by 2.2–51.1×. GPU-CFR in turn outperforms every CPU path we test, including that eight-thread arm and its one-socket scaling in Section 14.  \nWe answer three systems questions. (Q1) How can a full CFR iteration be compiled into fixed tensor dataflow while preserving its update semantics? (Q2) Which gains come from the compiled representation and which come from CUDA Graph Replay? (Q3) When does the lower iteration cost translate into lower wall-clock time for solution quality and for repeated solves? Our contributions are:  \n1. **A game-to-dataflow compiler for tabular CFR.** GPU-CFR maps a fixed game to flat arrays and a depth-level execution schedule, including static chance folding and a dual-lane reach representation (Figs. 2 and 3).  \n2. **CUDA Graph Replay with a causal performance decomposition.** We separate representation cost from framework dispatch and graph-launch cost through operation counts, eager/graph ablations, scaling, and repeated-solve measurements.  \n3. **State-of-the-art GPU performance for tabular CFR.** GPU-CFR runs 29.8–80.4× faster than the matched A100 baseline across the eight-game suite and outperforms every tested CPU path (Section 7).",
+            "page_content": "Can Edge-Deployable Vision-Language Models Identify Species?\n**Can Edge-Deployable Vision–Language Models Identify Species?**\n**4 Discussion, Limitations, and Conclusion**\n\n## **4 Discussion, Limitations, and Conclusion**  \nEdge-deployable VLMs (2–8B) possess substantial, far-above-chance taxonomic knowledge – but fall well short of a domain-specific specialist, degrade sharply and near-uniformly under field conditions, and under open-ended querying can confidently generate species names that do not exist. The relative severity of this fabrication risk across models is a robust, replicated result even where other comparisons (prompt-format preference) are not. Three findings reframe how this should be understood. First, BioCLIP’s specialist advantage holding despite its far smaller parameter count (300M vs. up to 8B) indicates the gap traces to specialized training data, not raw model scale – a claim that does not require, and is not weakened by, leaving frontier-scale VLMs untested. Second, BioCLIP’s own domain gap being statistically indistinguishable from the best VLM’s indicates the clean-to-field accuracy drop is a property of image degradation itself, not a gap specific to general-purpose pretraining – closing it likely requires better field-image robustness broadly, not simply more biological training data. Third, the Qwen3-VL 2B-vs-4B scaling reversal that dissolved under a doubled sample directly demonstrates why this paper’s two-evaluation-set, replication-first methodology matters: a single sampled evaluation set can manufacture findings a second, independent sample does not confirm.  \n**Limitations.** All VLM results use Q4-quantized weights, the common configuration for edge deployment but not full precision; because BioCLIP is not quantized, part of the VLM-vs-BioCLIP gap in Tab. 1 is confounded with this precision difference rather than being purely a training-data effect. BioCLIP’s forced-choice head also cannot fail to produce an answer the way a generative VLM’s free-form response can (RQ1); the gap reflects both taxonomic knowledge and instruction-following reliability, not fully disentangled here. Our broad and focus sets are sampled from the same underlying pool rather than disjoint camera networks, so replication demonstrates robustness to resampling, not generalization to a new site. We report BioCLIP’s domain gap as statistically indistinguishable from the best VLM’s based on overlapping 95% CIs, not a formal difference test; BioCLIP’s own interval is wide, so this is failure to detect a difference, not proof of equivalence. Every claim is scoped to the 2–8B range tested – whether these patterns persist at 32B-plus scale, a full-precision ablation, and a frontier-scale ceiling reference are left to future work.  \nTaken together, these results suggest edge-deployable VLMs currently hold breadth of taxonomic knowledge without the reliability required for unsupervised ecological deployment; closed-set prompting against a known candidate list is markedly safer than open-ended generation for this reason, independent of which format happens to score higher on any given sample.  \n8 W. Zhou et al.",
             "type": "Document"
           },
-          "similarity_score": 0.0,
+          "similarity_score": 0.46156709819017294,
           "rrf_score": 0.016129032258064516,
           "rrf_normalized": 0.4919354838709677,
-          "cross_encoder_score": 0.9607850909233093,
-          "cross_encoder_normalized": 0.7232789658688503,
-          "final_score": 0.6087649269124338,
-          "dense_rank": null,
-          "lexical_rank": 2
-        },
-        {
-          "chunk_id": "cd515361-56ed-449c-bfd8-35903b90947d",
-          "document": {
-            "id": "17f7a89b-83b0-40ca-88ef-fb296d93be35",
-            "metadata": {
-              "author": [
-                "Boning Li",
-                "Longbo Huang"
-              ],
-              "section_headings": [
-                "**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**",
-                "**4. Compiling CFR onto Accelerators**"
-              ],
-              "source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
-              "title": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay"
-            },
-            "page_content": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay\n**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**\n**4. Compiling CFR onto Accelerators**\n\n### **4. Compiling CFR onto Accelerators**  \nThe design follows one observation: once the game is fixed, the entire structure of a CFR iteration is known at build time, and only the numbers change. We therefore split the solver into a one-time _compilation_ of the game into flat arrays (Section 4.1) and a per-iteration _dataflow_ over those arrays whose operation sequence never changes (Section 4.2). The fixed sequence makes the iteration a legal target for CUDA-graph capture (Section 4.3). Figure 2 shows the pipeline on an 11-node example game with a chance root, two decisions per player, and six terminals, and Fig. 3 reuses the same game. A layered verification design checks the compiled schedule, graph replay, and evaluator (Section 4.4).",
-            "type": "Document"
-          },
-          "similarity_score": 0.7912579546809428,
-          "rrf_score": 0.016129032258064516,
-          "rrf_normalized": 0.4919354838709677,
-          "cross_encoder_score": 0.9385927319526672,
-          "cross_encoder_normalized": 0.718815308201503,
-          "final_score": 0.6068618408407548,
+          "cross_encoder_score": 0.9841153621673584,
+          "cross_encoder_normalized": 0.7279240305111224,
+          "final_score": 0.5652336034551803,
           "dense_rank": 2,
           "lexical_rank": null
         },
         {
-          "chunk_id": "938469b3-252f-4bd5-910d-7ecc17be3a81",
+          "chunk_id": "a398f34e-a3d6-4e89-8d40-0dba34db5dd6",
           "document": {
             "id": null,
             "metadata": {
               "section_headings": [
-                "**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**"
+                "**Can Edge-Deployable Vision–Language Models Identify Species?**",
+                "**3 Results**"
               ],
-              "source": "01_GPU-CFR_ 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay.pdf",
+              "source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
+              "title": "Can Edge-Deployable Vision-Language Models Identify Species?",
               "author": [
-                "Boning Li",
-                "Longbo Huang"
-              ],
-              "title": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay"
+                "William Zhou",
+                "Mayukha Siripuram",
+                "Xiao Yan",
+                "Ziqi Liu",
+                "Yi Ding"
+              ]
             },
-            "page_content": "GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay\n**GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**\n\n# **GPU-CFR: 80x Faster Counterfactual Regret Minimization by Compiling the Game to Static Dataflow and CUDA Graph Replay**  \n**Boning Li**<sup>1</sup> **and Longbo Huang**<sup>1 �</sup>  \n1Institute for Interdisciplinary Information Sciences, Tsinghua University  \n� Correspondence: longbohuang@tsinghua.edu.cn  \n**Abstract.** Counterfactual regret minimization (CFR) is the standard solver for imperfect-information extensive-form games. It is also one of the few large numerical workloads that still runs faster on CPUs than on GPUs. Each iteration sweeps a game tree with up to billions of states in millions of small, interdependent gather and scatter steps issued through a generic tree interface. On a GPU every kernel finishes in microseconds, so kernel launches and framework dispatch dominate the run time, and prior GPU implementations have lost to optimized CPU code. We observe that for a fixed game, everything about a CFR iteration except the numerical values is known before the first iteration runs. We propose GPU-CFR, a compiler and runtime built on this observation. It compiles any two-player zero-sum perfect-recall game once into static dataflow: flat edge and information-set arrays, precomputed indices, and depth-level batched passes fix the entire operation sequence, and only solver state changes between iterations. Static chance folding, depth-level execution blocks, and a dual-lane reach buffer cut the number of framework operations by up to 18.1×. Because shapes, indices, and buffer addresses never change, CUDA Graph Replay records the iteration once and replays it with a single graph launch. On one A100, across an eight-game suite that spans card games, dice games, and board games, GPU-CFR runs 29.8–80.4× faster than the fastest prior GPU CFR on the same accelerator (median 44.1×), and 14–258× faster than LiteEFG, one of the fastest open-source CPU implementations, on the four largest games. The compiled representation carries most of that margin: on eight CPU threads with no accelerator it is already 2.2–51.1× faster than the GPU baseline. On the CPU the optimized path reproduces the reference iterates bitwise, and tree construction and graph capture pay for themselves within the first solve. GPU-CFR beats every CPU and GPU baseline on the mid-to-large games of the suite without changing the update rule. Code is available at `https://github.com/lbn187/GPU-CFR` .",
+            "page_content": "Can Edge-Deployable Vision-Language Models Identify Species?\n**Can Edge-Deployable Vision–Language Models Identify Species?**\n**3 Results**\n\n## **3 Results**  \n**RQ1: edge-deployable VLMs vs. a specialist.** All four VLMs identify species far above the 1% chance rate, confirming real taxonomic knowledge in this size range – but BioCLIP substantially outperforms every VLM tested, by 33.2 points over the best (Qwen3-VL 8B) to 59.2 over the weakest (Tab. 1), holding in both domains (trap, cropped treatment – the only treatment BioCLIP was run on in this domain, so we restrict the VLM side of this specific comparison to the same treatment rather than Tab. 3’s pooled figure: 71.0% BioCLIP vs. 32.0% best VLM). Notably, BioCLIP achieves this despite being roughly 7–20 _×_  \n> 4 The 8B model (6.1 GB) exceeds 4 GB consumer laptop VRAM and spills to CPU (13–96 s/call vs. 1–40 s for smaller models) – itself a relevant data point for edge deployment, where 8B may already be impractical on the lowest-power hardware. A dedicated benchmark (Tab. 2) found 4B also exceeds this ceiling (5.6GB); only 2B is close to fitting (4.1GB).  \nCan Edge-Deployable VLMs Identify Species? 5  \n**Table 2:** Latency and peak GPU memory, one laptop, cropped/multiple-choice, _n_ =40/model. Latency is right-skewed for every VLM, tracking the CPU-spillover pattern noted above.  \n|Model (params)|Mean|Median|p90|Peak GPU mem.|\n|---|---|---|---|---|\n|BioCLIP (300M)|0.57s|0.56s|0.58s|N/A<sup>_†_</sup>|\n|Gemma3 4B|1.99s|1.76s|1.95s|4.1 GB|\n|Qwen3-VL 2B|19.40s|6.38s|50.11s|4.1 GB|\n|Qwen3-VL 4B|9.74s|4.86s|28.22s|5.6 GB|\n|Qwen3-VL 8B|30.04s|18.02s|103.29s|7.2 GB|  \n> _†_ Ran on CPU here, not GPU; footprint would be far below the VLMs’ even if GPU-resident, given 300M params.  \nsmaller than the VLMs we test (300M vs. 2–8B parameters), suggesting this advantage reflects BioCLIP’s specialized training data rather than model scale – a stronger, scale-independent claim than a size-matched comparison alone would support, and one that does not require testing larger VLMs to establish. Edgedeployable general-purpose VLMs do not yet substitute for a specialist at any scale or family we tested within this range.  \nPart of this gap is not purely taxonomic: BioCLIP, forced-choice, always returns an answer by construction, whereas generative VLMs can refuse, hedge, or answer off-list. This rate is uneven: on trap multiple-choice prompts, Qwen3VL 2B fails to answer 48.7% of items, versus 1.2–3.0% for 4B/8B and 0% (3.7– 4.3% off-list) for Gemma3 4B. Non-answers score as incorrect throughout, inflating BioCLIP’s advantage over weaker VLMs specifically; the Qwen3-VL 8B comparison, with the lowest failure rate, is least confounded.",
             "type": "Document"
           },
           "similarity_score": 0.0,
+          "rrf_score": 0.016129032258064516,
+          "rrf_normalized": 0.4919354838709677,
+          "cross_encoder_score": 0.8684584498405457,
+          "cross_encoder_normalized": 0.7044248322655099,
+          "final_score": 0.5594370278680126,
+          "dense_rank": null,
+          "lexical_rank": 2
+        },
+        {
+          "chunk_id": "aae77216-7724-4672-9160-1f9ffd873dda",
+          "document": {
+            "id": "aae77216-7724-4672-9160-1f9ffd873dda",
+            "metadata": {
+              "title": "Can Edge-Deployable Vision-Language Models Identify Species?",
+              "author": [
+                "William Zhou",
+                "Mayukha Siripuram",
+                "Xiao Yan",
+                "Ziqi Liu",
+                "Yi Ding"
+              ],
+              "source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
+              "section_headings": [
+                "**Can Edge-Deployable Vision–Language Models Identify Species?**",
+                "**1 Introduction**"
+              ]
+            },
+            "page_content": "Can Edge-Deployable Vision-Language Models Identify Species?\n**Can Edge-Deployable Vision–Language Models Identify Species?**\n**1 Introduction**\n\nCan Edge-Deployable VLMs Identify Species? 3  \nrather than a general-purpose-model-specific weakness (since BioCLIP degrades by a statistically indistinguishable amount); and that under open-ended querying, models can confidently generate taxonomically nonexistent species names, with a fabrication-rate ranking across models that is more robust than any single accuracy number.  \n**Related work.** BioCLIP [12] established that a specialist model trained on curated biological imagery (TreeOfLife-10M) substantially outperforms generalpurpose vision baselines, but its evaluation is confined to clean photographs, leaving open whether this advantage persists on camera-trap imagery – the comparison at the center of our RQ1. Camera-trap-specific adaptations exist: Fabian et al. [2] and Yang et al. [15] fine-tune models for field imagery but do not quantify image-quality characteristics, leaving unclear whether errors trace to hard taxa or hard images (RQ3); Dussert et al. [1] apply VLMs zero-shot to a related task (behavior, not species classification) with day/night context, but do not analyze accuracy against image quality directly, nor scope their evaluation to edge-deployable model sizes. Closest to our own analysis, Nanduri et al. [11] compare specialist and retrieval-based models across image-quality conditions, but do not include general-purpose VLMs alongside them – the direct comparison our work provides, within the deployment-relevant size range.",
+            "type": "Document"
+          },
+          "similarity_score": 0.39280628501228687,
           "rrf_score": 0.015873015873015872,
           "rrf_normalized": 0.4841269841269841,
-          "cross_encoder_score": 0.9938104748725891,
-          "cross_encoder_normalized": 0.7298399051422836,
-          "final_score": 0.606675514299085,
-          "dense_rank": null,
-          "lexical_rank": 3
+          "cross_encoder_score": 0.7600871324539185,
+          "cross_encoder_normalized": 0.6813726508888907,
+          "final_score": 0.5475268247099979,
+          "dense_rank": 3,
+          "lexical_rank": null
+        },
+        {
+          "chunk_id": "72eaff88-4435-45eb-9e3c-48094eb3f5d5",
+          "document": {
+            "id": "72eaff88-4435-45eb-9e3c-48094eb3f5d5",
+            "metadata": {
+              "source": "03_Can Edge-Deployable Vision-Language Models Identify Species_.pdf",
+              "section_headings": [
+                "**Can Edge-Deployable Vision–Language Models Identify Species?**"
+              ],
+              "title": "Can Edge-Deployable Vision-Language Models Identify Species?",
+              "author": [
+                "William Zhou",
+                "Mayukha Siripuram",
+                "Xiao Yan",
+                "Ziqi Liu",
+                "Yi Ding"
+              ]
+            },
+            "page_content": "Can Edge-Deployable Vision-Language Models Identify Species?\n**Can Edge-Deployable Vision–Language Models Identify Species?**\n\n# **Can Edge-Deployable Vision–Language Models Identify Species?**  \nWilliam Zhou<sup>1</sup> , Mayukha Siripuram<sup>2</sup> , Xiao Yan<sup>3</sup> , Ziqi Liu<sup>3</sup> , and Yi Ding<sup>3</sup>  \n> 1 Plano West Senior High School  \n> 2 Centennial High School  \n> 3 The University of Texas at Dallas  \n**Abstract.** Camera traps often run in the field on edge hardware with limited or no connectivity, making small, locally-deployable vision–language models (VLMs) – not frontier-scale ones – the practically relevant class to evaluate for species identification. We test whether models in this deployment-relevant 2–8B range carry genuine taxonomic knowledge, evaluating four such VLMs (Qwen3-VL 2B/4B/8B, Gemma3 4B) against the domain-specific specialist BioCLIP (300M parameters) on a 96-species task, comparing clean iNaturalist photographs against camera-trap imagery from 6 LILA.science collections, on two independently-sampled evaluation sets. All models identify species far above chance, but every model – general-purpose or specialist – degrades sharply on field imagery (domain gaps of 9.6–26.6 percentage points, consistent across taxonomic levels and both evaluation sets), indicating the degradation reflects general image legibility rather than fine-grained discrimination failure. BioCLIP substantially outperforms every VLM tested (by 33.2– 59.2 percentage points across an expanded 200-image sample for every model) despite its far smaller size, suggesting the gap reflects specialized training data rather than model scale; yet BioCLIP’s own domain gap (18.0 points) is statistically indistinguishable from the best VLM’s (22.3 points), suggesting the clean-to-field degradation itself is a property of the image-quality shift rather than a general-purpose-model weakness. Under open-set prompting, 5.9–9.6% of responses are syntactically valid but taxonomically nonexistent species names; the relative fabricationrate ranking across models replicates exactly across both evaluation sets, a more robust finding than any single point estimate.  \n**Keywords:** Vision-language models · species identification · zero-shot learning · edge deployment · camera-trap imagery · hallucination",
+            "type": "Document"
+          },
+          "similarity_score": 0.37395598057524393,
+          "rrf_score": 0.015625,
+          "rrf_normalized": 0.4765625,
+          "cross_encoder_score": 0.8130884170532227,
+          "cross_encoder_normalized": 0.6927672364902504,
+          "final_score": 0.5445404388442636,
+          "dense_rank": 4,
+          "lexical_rank": null
         }
       ],
       "exact_page_results": [],

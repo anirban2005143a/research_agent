@@ -31,25 +31,41 @@ def _safe_collection_name(session_id: str) -> str:
     return f"research_documents_{value}"
 
 def _chunk_id(document: Document) -> str:
-    metadata = document.metadata or {}
-    return str(metadata.get("chunk_id") or uuid.uuid4())
+    return str(document.id or uuid.uuid4())
+
 
 class DenseRetriever:
     """Own the vector database and dense embedding operations."""
 
-    def __init__(self, session_id: str):
+    def __init__(
+        self, 
+        session_id: str, 
+        collection_name: str | None = None, 
+        persist_directory: str | Path | None = None
+    ):
         self.session_id = session_id
         self.embeddings = _EMBEDDINGS
 
-        self._storage_dir = Path(getattr(settings, "chroma_dir", ".chroma")) / session_id
+        # 1. Resolve storage directory (fallback to config if not provided)
+        if persist_directory is not None:
+            self._storage_dir = Path(persist_directory)
+        else:
+            self._storage_dir = Path(getattr(settings, "chroma_dir", ".chroma")) / session_id
+        
         self._storage_dir.mkdir(parents=True, exist_ok=True)
-        self.vector_store = self._open_collection(session_id)
 
-    def _open_collection(self, session_id: str) -> Chroma:
-        storage = Path(getattr(settings, "chroma_dir", ".chroma")) / session_id
+        # 2. Resolve collection name (fallback to generated one if not provided)
+        if collection_name is not None:
+            self.collection_name = collection_name
+        else:
+            self.collection_name = _safe_collection_name(session_id)
+
+        self.vector_store = self._open_collection(self.collection_name, self._storage_dir)
+
+    def _open_collection(self, collection_name: str, storage: Path) -> Chroma:
         storage.mkdir(parents=True, exist_ok=True)
         return Chroma(
-            collection_name=_safe_collection_name(session_id),
+            collection_name=collection_name,
             embedding_function=self.embeddings,
             persist_directory=str(storage),
         )
@@ -81,13 +97,13 @@ class DenseRetriever:
         for start in range(0, total, batch_size):
             end = min(start + batch_size, total)
             batch = chunks[start:end]
-            print(f"[RAG][VECTOR STORE] Storing embeddgings of chunks {start + 1}-{end}/{total}")
+            print(f"[RAG][VECTOR STORE] Storing embeddings of chunks {start + 1}-{end}/{total}")
             self.vector_store.add_documents(batch)
 
         print(f"[RAG][VECTOR STORE] Stored {total} chunks")
 
-    def search(self, query: str, limit: int) -> list[RetrievedChunk]:
-        results = self.vector_store.similarity_search_with_relevance_scores(query, k=limit)
+    def search(self, query: str, k: int) -> list[RetrievedChunk]:
+        results = self.vector_store.similarity_search_with_relevance_scores(query, k=k)
         chunks: list[RetrievedChunk] = []
         for rank, (document, score) in enumerate(results, start=1):
             chunks.append(
@@ -106,7 +122,7 @@ class DenseRetriever:
         When no session is supplied, the current retriever instance/session is used.
         """
         target_session = session_id or self.session_id
-        store = self.vector_store if target_session == self.session_id else self._open_collection(target_session)
+        store = self.vector_store if target_session == self.session_id else self._open_collection(_safe_collection_name(target_session), self._storage_dir.parent / target_session)
 
         result = store.get(include=["documents", "metadatas"])
         documents: list[Document] = []

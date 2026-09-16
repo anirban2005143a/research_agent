@@ -232,11 +232,11 @@ The result is normalized against the theoretical maximum score for rank one in b
 
 ### Cross-encoder reranking
 
-`cross_encoder_ranker.py` scores `(query, chunk_text)` pairs only after RRF has reduced the candidate set. Raw scores are converted with a sigmoid into `cross_encoder_normalized`. The model is loaded once at module import and reused. Set `RAG_RERANKER_ENABLED=false` to disable it.
+`cross_encoder_ranker.py` scores `(query, chunk_text)` pairs only after RRF has reduced the candidate set. Raw scores are converted with a sigmoid into `cross_encoder_normalized`. The model is loaded once at module import and reused. Set `CROSS_ENCODER_ENABLED=false` to disable it.
 
 ### Final ranking
 
-`overall_ranker.py` combines `rrf_normalized` and `cross_encoder_normalized` with a weighted harmonic mean. This favors results supported by both retrieval signals. The current constructor uses RRF weight `0.4` and cross-encoder weight `0.6`.
+`overall_ranker.py` combines `rrf_normalized` and `cross_encoder_normalized` with a weighted harmonic mean. The RRF weight is the sum of `RAG_DENSE_WEIGHT` and `RAG_BM25_WEIGHT`; the cross-encoder weight is `RAG_CROSS_ENCODER_WEIGHT`.
 
 ## Configuration
 
@@ -249,9 +249,11 @@ Settings are loaded from `.env` by `research_agent/config.py`.
 | `EMBEDDING_MODEL_ID` | `BAAI/bge-m3` in shared settings | Embedding model setting |
 | `EMBEDDING_CACHE_DIR` | `.models` | Model cache directory |
 | `EMBEDDING_LOCAL_FILES_ONLY` | `false` | Disable model downloads |
-| `RAG_RERANKER_MODEL_ID` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model |
-| `RAG_RERANKER_ENABLED` | `true` | Enable cross-encoder |
-| `RAG_RERANKER_LOCAL_FILES_ONLY` | `false` | Use cached reranker only |
+| `CROSS_ENCODER_MODEL_ID` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model |
+| `CROSS_ENCODER_ENABLED` | `true` | Enable cross-encoder |
+| `CROSS_ENCODER_BATCH_SIZE` | `8` | Cross-encoder batch size |
+| `CROSS_ENCODER_LOCAL_FILES_ONLY` | `false` | Use cached reranker only |
+| `CROSS_ENCODER_CACHE_DIR` | `.models` | Cross-encoder cache directory |
 | `RAG_CHUNK_SIZE` | `900` | Maximum chunk size |
 | `RAG_CHUNK_OVERLAP` | `140` | Chunk overlap |
 | `RAG_EMBEDDING_BATCH_SIZE` | `16` | Embedding batch size |
@@ -259,8 +261,10 @@ Settings are loaded from `.env` by `research_agent/config.py`.
 | `RAG_CANDIDATE_MULTIPLIER` | `6` | Candidate expansion factor |
 | `HUGGINGFACEHUB_API_TOKEN` | empty | Hugging Face authentication/rate limits |
 | `HF_PROVIDER` | `auto` | Hugging Face provider |
-
-Note: the current dense retriever reads `settings.rag_embedding_model_id` and falls back to `BAAI/bge-base-en-v1.5`, while shared `Settings` exposes `EMBEDDING_MODEL_ID`. These names should be synchronized before production deployment.
+| `RAG_DENSE_WEIGHT` | `0.35` | Dense retrieval contribution |
+| `RAG_BM25_WEIGHT` | `0.25` | BM25 retrieval contribution |
+| `RAG_CROSS_ENCODER_WEIGHT` | `0.40` | Cross-encoder contribution |
+| `MAX_RESEARCH_ITERATIONS` | `2` | Maximum critique iterations |
 
 ## Running The RAG Pipeline
 

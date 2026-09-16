@@ -10,15 +10,15 @@ from .data_types import RetrievedChunk
 _CROSS_ENCODER_MODEL_ID = getattr(
     settings, "rag_corss_encoder_model_id", "BAAI/bge-reranker-base"
 )
-_CROSS_ENCODER_LOCAL_ONLY = getattr(settings, "rag_corss_encoder_local_files_only", False)
-_CROSS_ENCODER_CACHE_DIR = getattr(settings, "rag_cross_encoder_cache_dir", False)
+_CROSS_ENCODER_LOCAL_ONLY = getattr(settings, "rag_cross_encoder_local_files_only", False)
+_CROSS_ENCODER_CACHE_DIR = getattr(settings, "rag_cross_encoder_cache_dir", ".models")
 
 print(f"[RAG][CROSS_ENCODER] Loading model at import: {_CROSS_ENCODER_MODEL_ID}")
 _CROSS_ENCODER_MODEL = CrossEncoder(
     model_name_or_path=_CROSS_ENCODER_MODEL_ID,
     cache_folder=_CROSS_ENCODER_CACHE_DIR,
     max_length=512,
-    local_files_only=_CROSS_ENCODER_LOCAL_ONLY,
+    local_files_only=_CROSS_ENCODER_LOCAL_ONLY
 )
 
 
@@ -37,13 +37,13 @@ class CrossEncoderRanker:
         if not candidates:
             return []
 
-        if not getattr(settings, "rag_corss_encoder_enabled", True):
+        if not getattr(settings, "rag_cross_encoder_enabled", True):
             print("[RAG][CROSS_ENCODER] Disabled by configuration")
             return candidates
 
         model = self._load_model()
         pairs = [(query, candidate.document.page_content) for candidate in candidates]
-        batch_size = getattr(settings, "rag_corss_encoder_batch_size", 8)
+        batch_size = getattr(settings, "rag_cross_encoder_batch_size", 8)
         raw_scores = model.predict(
             pairs, batch_size=batch_size, show_progress_bar=False
         )

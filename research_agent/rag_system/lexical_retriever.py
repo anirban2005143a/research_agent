@@ -9,8 +9,7 @@ from .data_types import RetrievedChunk
 
 
 def _chunk_id(document: Document) -> str:
-    metadata = document.metadata or {}
-    return str(metadata.get("chunk_id") or uuid.uuid4())
+    return str(document.id or uuid.uuid4())
 
 
 class LexicalRetriever:

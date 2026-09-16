@@ -24,10 +24,10 @@ class RotatingHuggingFaceChat(Runnable):
 
     def invoke(self, input, config=None, **kwargs):
         endpoint = HuggingFaceEndpoint(
-            repo_id=settings.llm_model_id,
+            repo_id=getattr(settings, "llm_model_id", "meta-llama/Llama-3.1-8B-Instruct"),
             huggingfacehub_api_token=self._next_token(),
-            max_new_tokens=settings.llm_max_new_tokens,
-            temperature=settings.llm_temperature,
+            max_new_tokens=getattr(settings, "llm_max_new_tokens", 1024),
+            temperature=getattr(settings, "llm_temperature", 0.1),
         )
         model = ChatHuggingFace(llm=endpoint)
         if self.tools:
@@ -46,7 +46,9 @@ class RotatingHuggingFaceChat(Runnable):
 
 
 def build_llm():
-    tokens = settings.hf_tokens or ((settings.hf_token,) if settings.hf_token and not settings.hf_token.startswith("your_") else ())
+    configured_tokens = getattr(settings, "hf_tokens", ())
+    fallback_token = getattr(settings, "hf_token", "")
+    tokens = configured_tokens or ((fallback_token,) if fallback_token and not fallback_token.startswith("your_") else ())
     if not tokens:
         raise RuntimeError("Configure HUGGINGFACEHUB_API_TOKEN or HF_TOKEN1..HF_TOKEN5 in .env.")
     return RotatingHuggingFaceChat(tokens)

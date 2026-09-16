@@ -24,4 +24,6 @@ class QualityReview(BaseModel):
 
 def fixing_parser(model: type[BaseModel], llm):
     parser = PydanticOutputParser(pydantic_object=model)
-    return OutputFixingParser.from_llm(parser=parser, llm=llm, max_retries=settings.max_retries)
+    return OutputFixingParser.from_llm(
+        parser=parser, llm=llm, max_retries=getattr(settings, "max_retries", 3)
+    )

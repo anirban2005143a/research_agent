@@ -15,7 +15,7 @@ from .evaluate_query_result import evaluate_single_query
 SOURCE_DIR = Path(r"D:\projects\research-agent\research_agent\rag_system\evaluate_rag_system\computer_science_research_papers")
 SESSION_ID = "paper_eval_session"
 RESULTS_PATH = Path(r"D:\projects\research-agent\research_agent\rag_system\evaluate_rag_system\eval_results.json")
-TEST_CASES_PATH = Path(r"D:\projects\research-agent\research_agent\rag_system\evaluate_rag_system\eval_cases.json")
+TEST_CASES_PATH = Path(r"D:\projects\research-agent\research_agent\rag_system\evaluate_rag_system\eval_cases_temp.json")
 _CACHE: HybridRAG | None = None
 
 def load_test_cases(cases_path: str | Path) -> list[dict[str, Any]]:
@@ -36,8 +36,8 @@ def process_source_directory(
     rag = HybridRAG(session_id=session_id)
     source_path = Path(source_dir)
 
-    for file_path in sorted(source_path.rglob("*.pdf")):
-        rag.store_document(file_path)
+    # for file_path in sorted(source_path.rglob("*.pdf")):
+    #     rag.store_document(file_path)
 
     _CACHE = rag
     return rag

@@ -68,7 +68,10 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
         """Use when the question likely depends on uploaded or stored local documents. Search the indexed document corpus for matching evidence and return the strongest chunks with citations."""
         log(f"TOOL rag_search | query={query!r}")
         started = time.perf_counter()
-        matches = retry_call(lambda: rag.retrieve(query, k=settings.rag_top_k), "tool.rag_search")
+        matches = retry_call(
+            lambda: rag.retrieve(query, k=getattr(settings, "rag_top_k", 8)),
+            "tool.rag_search",
+        )
         log(f"TOOL rag_search | matches={len(matches)} | elapsed={time.perf_counter() - started:.2f}s")
         if not matches:
             return "No matching uploaded-document evidence was found. State this limitation explicitly."
