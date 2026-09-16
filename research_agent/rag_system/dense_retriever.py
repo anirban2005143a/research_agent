@@ -12,7 +12,7 @@ from ..config import settings
 from .data_types import RetrievedChunk
 
 
-_EMBEDDING_MODEL_ID = getattr(settings, "rag_embedding_model_id", "BAAI/bge-base-en-v1.5")
+_EMBEDDING_MODEL_ID = getattr(settings, "embedding_model_id", "BAAI/bge-m3")
 _EMBEDDING_CACHE_DIR = getattr(settings, "embedding_cache_dir", ".models")
 _EMBEDDING_LOCAL_ONLY = getattr(settings, "embedding_local_files_only", False)
 
@@ -21,7 +21,7 @@ _EMBEDDINGS = HuggingFaceEmbeddings(
     model_name=_EMBEDDING_MODEL_ID,
     cache_folder=_EMBEDDING_CACHE_DIR,
     model_kwargs={"device": "cpu", "local_files_only": _EMBEDDING_LOCAL_ONLY},
-    encode_kwargs={"normalize_embeddings": True},
+    encode_kwargs={"normalize_embeddings": True}
 )
 
 
@@ -81,13 +81,8 @@ class DenseRetriever:
         for start in range(0, total, batch_size):
             end = min(start + batch_size, total)
             batch = chunks[start:end]
-            for document in batch:
-                metadata = dict(document.metadata or {})
-                metadata.setdefault("chunk_id", str(uuid.uuid4()))
-                document.metadata = metadata
-            ids = [str(document.metadata["chunk_id"]) for document in batch]
             print(f"[RAG][EMBEDDING] Embedding chunks {start + 1}-{end}/{total}")
-            self.vector_store.add_documents(batch, ids=ids)
+            self.vector_store.add_documents(batch)
 
         print(f"[RAG][VECTOR STORE] Stored {total} chunks")
 

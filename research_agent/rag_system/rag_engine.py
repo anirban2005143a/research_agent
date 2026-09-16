@@ -69,7 +69,7 @@ class HybridRAG:
             print(f"[RAG][INDEX] Replacing existing Chroma entries for: {source}")
             self.dense_retriever.delete_file(source)
 
-        chunks = self.document_handler.prepare_file(path)
+        chunks = self.document_handler.process_input_file(path)
         if not chunks:
             print(f"[RAG][INDEX] No readable text found: {source}")
             return 0

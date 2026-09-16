@@ -72,7 +72,6 @@ class PDFDocumentHandler(DocumentHandler):
                 cleaned_authors.append(cleaned_value)
         return cleaned_authors
 
-
     def _extract_title_from_metadata(self, metadata: object) -> str:
         """Read the document title from PDF metadata, using the most reliable available field."""
         if not metadata:
@@ -141,9 +140,11 @@ class PDFDocumentHandler(DocumentHandler):
             section_metadata = {
                 "source": path.name,
                 "title": title,
-                "author": authors,
-                "section_headings": section_headings,
             }
+            if authors:
+                section_metadata["author"] = authors
+            if section_headings:
+                section_metadata["section_headings"] = section_headings
 
             # -----------------------------------------------------
             # 3. Build semantic prefix

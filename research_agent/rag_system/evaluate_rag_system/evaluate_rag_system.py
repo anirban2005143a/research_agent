@@ -8,18 +8,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from research_agent.rag_system_update.rag_engine import HybridRAG
-from research_agent.rag_system_update.data_types import RetrievedChunk
+from research_agent.rag_system.rag_engine import HybridRAG
+from research_agent.rag_system.data_types import RetrievedChunk
 from .evaluate_query_result import evaluate_single_query
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-
-SOURCE_DIR = Path(__file__).resolve().parents[1] / "Artificial_Intelligence"
+SOURCE_DIR = Path(r"D:\projects\research-agent\research_agent\rag_system\evaluate_rag_system\computer_science_research_papers")
 SESSION_ID = "paper_eval_session"
-RESULTS_PATH = Path(__file__).resolve().parent / "eval_results.json"
+RESULTS_PATH = Path(r"D:\projects\research-agent\research_agent\rag_system\evaluate_rag_system\eval_results.json")
+TEST_CASES_PATH = Path(r"D:\projects\research-agent\research_agent\rag_system\evaluate_rag_system\eval_cases.json")
 _CACHE: HybridRAG | None = None
 
 def load_test_cases(cases_path: str | Path) -> list[dict[str, Any]]:
@@ -40,8 +36,8 @@ def process_source_directory(
     rag = HybridRAG(session_id=session_id)
     source_path = Path(source_dir)
 
-    # for file_path in sorted(source_path.glob("*.pdf")):
-    #     rag.store_document(file_path)
+    for file_path in sorted(source_path.rglob("*.pdf")):
+        rag.store_document(file_path)
 
     _CACHE = rag
     return rag
@@ -144,11 +140,10 @@ def evaluate_all_cases(
 
 if __name__ == "__main__":
     source_dir = SOURCE_DIR
-    cases_path = Path(__file__).resolve().parent / "eval_cases_temp.json"
 
     rag = process_source_directory(source_dir=source_dir, session_id=SESSION_ID)
     result = evaluate_all_cases(
-        test_cases_path=cases_path,
+        test_cases_path=TEST_CASES_PATH,
         rag=rag,
         k=5,
     )

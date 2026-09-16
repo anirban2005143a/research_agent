@@ -11,10 +11,12 @@ _CROSS_ENCODER_MODEL_ID = getattr(
     settings, "rag_corss_encoder_model_id", "BAAI/bge-reranker-base"
 )
 _CROSS_ENCODER_LOCAL_ONLY = getattr(settings, "rag_corss_encoder_local_files_only", False)
+_CROSS_ENCODER_CACHE_DIR = getattr(settings, "rag_cross_encoder_cache_dir", False)
 
 print(f"[RAG][CROSS_ENCODER] Loading model at import: {_CROSS_ENCODER_MODEL_ID}")
 _CROSS_ENCODER_MODEL = CrossEncoder(
     model_name_or_path=_CROSS_ENCODER_MODEL_ID,
+    cache_folder=_CROSS_ENCODER_CACHE_DIR,
     max_length=512,
     local_files_only=_CROSS_ENCODER_LOCAL_ONLY,
 )

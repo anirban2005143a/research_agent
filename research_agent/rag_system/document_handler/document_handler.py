@@ -66,7 +66,7 @@ class DocumentHandler:
         path = Path(document_path)
         if path.suffix.lower() == ".pdf":
             from .pdf_handler import PDFDocumentHandler
-            return PDFDocumentHandler(self.storage_dir)
+            return PDFDocumentHandler()
         return self
 
     def load_document(self, document_path: Path) -> list[Document]:
@@ -98,8 +98,8 @@ class DocumentHandler:
 
     def extract_metadata(self, document_path: str | Path) -> dict[str, str]:
         """Build the default metadata block for a source document before chunking."""
+        
         return {
-            "filename": Path(document_path).name,
             "source": Path(document_path).name,
         }
 
@@ -139,12 +139,12 @@ class DocumentHandler:
 
         return self.generate_chunks(prepared_documents, source_name)
 
-    def prepare_file(self, input_file_path: str | Path) -> list[Document]:
+    def process_input_file(self, input_file_path: str | Path) -> list[Document]:
         """Validate a single file path, delegate to the proper handler, and return chunked documents."""
         file_path = Path(input_file_path)
         if file_path.is_dir():
             raise ValueError(
-                "DocumentHandler.prepare_file expects a single file path, not a directory. "
+                "DocumentHandler.process_input_file expects a single file path, not a directory. "
                 "Directory iteration should happen in the test entrypoint."
             )
         if not file_path.exists():

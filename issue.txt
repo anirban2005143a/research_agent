@@ -30,3 +30,5 @@ ex: it should plan according to the tools and resourceswe have along with the ta
 12. duplicate chunk_id in metadata also in main chunk data.
 
 13. remove the eval_cases.jsonl - done
+
+14. check duplicate entry in chroma

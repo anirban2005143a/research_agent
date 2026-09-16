@@ -41,13 +41,14 @@ class Settings:
     rag_embedding_batch_size: int = int(os.getenv("RAG_EMBEDDING_BATCH_SIZE", "16"))
     rag_top_k: int = int(os.getenv("RAG_TOP_K", "8"))
     rag_candidate_multiplier: int = int(os.getenv("RAG_CANDIDATE_MULTIPLIER", "6"))
-    rag_corss_encoder_model_id: str = os.getenv("RAG_CROSS_ENCODER_MODEL_ID", "BAAI/bge-reranker-v2-m3")
-    rag_corss_encoder_enabled: bool = os.getenv("RAG_CROSS_ENCODER_ENABLED", "true").lower() == "true"
-    rag_corss_encoder_batch_size: int = int(os.getenv("RAG_CROSS_ENCODER_BATCH_SIZE", "8"))
-    rag_corss_encoder_local_files_only: bool = os.getenv("RAG_CROSS_ENCODER_LOCAL_FILES_ONLY", "false").lower() == "true"
+    rag_corss_encoder_model_id: str = os.getenv("CROSS_ENCODER_MODEL_ID", "BAAI/bge-reranker-v2-m3")
+    rag_corss_encoder_enabled: bool = os.getenv("CROSS_ENCODER_ENABLED", "true").lower() == "true"
+    rag_corss_encoder_batch_size: int = int(os.getenv("CROSS_ENCODER_BATCH_SIZE", "8"))
+    rag_corss_encoder_local_files_only: bool = os.getenv("CROSS_ENCODER_LOCAL_FILES_ONLY", "false").lower() == "true"
     rag_dense_weight: float = float(os.getenv("RAG_DENSE_WEIGHT", "0.35"))
     rag_bm25_weight: float = float(os.getenv("RAG_BM25_WEIGHT", "0.25"))
-    rag_cross_encoder_weight: float = float(os.getenv("RAG_CROSS_ENCODER_WEIGHT", "0.40"))
+    rag_cross_encoder_weight: float = float(os.getenv("CROSS_ENCODER_WEIGHT", "0.40"))
+    rag_cross_encoder_cache_dir : str = os.getenv("CROSS_ENCODER_CACHE_DIR", ".models")
     max_research_iterations: int = int(os.getenv("MAX_RESEARCH_ITERATIONS", "2"))
 
 
