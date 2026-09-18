@@ -22,7 +22,7 @@ def retry_call(operation: Callable[[], T], label: str, max_retry: int | None = N
             last_error = exc
             log(f"retry.failed | operation={label} | attempt={attempt}/{max_retries} | error={exc!r}")
             if attempt < max_retries:
-                delay_seconds = min(2 ** (attempt - 1), 8)
+                delay_seconds = max(0.0, getattr(settings, "retry_delay_seconds", 1.0))
                 log(f"retry.waiting | operation={label} | delay_seconds={delay_seconds}")
                 time.sleep(delay_seconds)
     raise last_error

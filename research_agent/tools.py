@@ -1,7 +1,7 @@
 from typing import Any
 
-from langchain_community.tools import ArxivQueryRun, DuckDuckGoSearchRun, WikipediaQueryRun
-from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
+from langchain_community.tools import DuckDuckGoSearchRun, WikipediaQueryRun
+from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,29 @@ def _web_search(query: str) -> str:
     if not results:
         return "No web sources found. The available external knowledge may not cover this query."
     return str(results)
+
+
+def _arxiv_search(query: str, max_results: int = 5) -> str:
+    """Search Arxiv using the current Client API instead of the legacy wrapper API."""
+    import arxiv
+
+    search = arxiv.Search(
+        query=query,
+        max_results=max_results,
+        sort_by=arxiv.SortCriterion.Relevance,
+    )
+    results = arxiv.Client().results(search)
+    summaries = [
+        (
+            f"Published: {result.updated.date()}\n"
+            f"Title: {result.title}\n"
+            f"Authors: {', '.join(author.name for author in result.authors)}\n"
+            f"URL: {result.entry_id}\n"
+            f"Summary: {result.summary}"
+        )
+        for result in results
+    ]
+    return "\n\n".join(summaries) or "No good Arxiv result was found."
 
 
 def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | None = None) -> list[Any]:
@@ -71,7 +94,6 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
         return retry_call(document_handler.list_files, "tool.list_stored_files")
 
     wikipedia_backend = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(top_k_results=3))
-    arxiv_backend = ArxivQueryRun(api_wrapper=ArxivAPIWrapper(top_k_results=5, load_max_docs=5))
 
     @tool("wikipedia_search", args_schema=QueryInput)
     def wikipedia_search(query: str) -> str:
@@ -83,7 +105,7 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
     def arxiv_search(query: str) -> str:
         """Use for academic papers, system design details, implementation behavior, algorithms, and technical literature. Best for research questions that require formal or peer-reviewed technical evidence."""
         log(f"tool.arxiv_search.started | query={query!r}")
-        return str(retry_call(lambda: arxiv_backend.invoke(query), "tool.arxiv_search"))
+        return retry_call(lambda: _arxiv_search(query), "tool.arxiv_search")
 
     return [
         web_search,

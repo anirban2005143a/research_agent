@@ -258,6 +258,10 @@ Settings are loaded from `.env` by `research_agent/config.py`.
 | `RAG_CHUNK_OVERLAP` | `140` | Chunk overlap |
 | `RAG_EMBEDDING_BATCH_SIZE` | `16` | Embedding batch size |
 | `RAG_TOP_K` | `8` | Default final result count |
+| `LLM_CALL_DELAY_SECONDS` | `20` | Delay before each LLM call |
+| `MAX_RETRIES` | `3` | Maximum attempts for retryable operations |
+| `RETRY_DELAY_SECONDS` | `1` | Fixed delay between retry attempts |
+| `SESSION_MEMORY_SNAPSHOT_DIR` | `session_memory_snapshots` | Diagnostic JSON mirror of per-session RAM memory |
 
 ## Session Memory And Conversation Compaction
 
@@ -319,6 +323,8 @@ This allows the model to answer with memory continuity without needing large gra
 ### Session lifecycle behavior
 
 The Streamlit app creates a fresh session identifier and clears the old in-RAM memory when a new session begins. This guarantees that the memory for one chat does not bleed into another chat.
+
+For demonstration and inspection, each session also writes a JSON snapshot under `SESSION_MEMORY_SNAPSHOT_DIR` (by default `session_memory_snapshots/`). This is only a diagnostic mirror of `user_info` and `session_context`; the agent never reads it during a request, and runtime memory remains in the process-level RAM store.
 
 In short, the design now follows this pattern:
 

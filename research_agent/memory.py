@@ -1,10 +1,13 @@
 from collections.abc import Callable
+import json
 import re
+from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 
+from .config import settings
 from .utils import retry_call
 
 
@@ -36,6 +39,30 @@ class ShortTermMemory:
         self.session_id = session_id
         self.user_info: list[str] = []
         self.session_context: list[str] = []
+        self._write_snapshot()
+
+    def _write_snapshot(self) -> None:
+        """Write a diagnostic mirror; runtime memory continues to live only in RAM."""
+        if not self.session_id:
+            return
+        snapshot_dir = Path(
+            getattr(settings, "session_memory_snapshot_dir", "session_memory_snapshots")
+        )
+        safe_session_id = re.sub(r"[^A-Za-z0-9_.-]", "_", self.session_id)
+        snapshot_path = snapshot_dir / f"{safe_session_id}.json"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_path.write_text(
+            json.dumps(
+                {
+                    "session_id": self.session_id,
+                    "user_info": self.user_info,
+                    "session_context": self.session_context,
+                },
+                ensure_ascii=True,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
     def _merge_points(self, existing: list[str], new_points: list[str], limit: int = 5) -> list[str]:
         merged: list[str] = []
@@ -85,6 +112,7 @@ class ShortTermMemory:
                 extracted_user_info.append(f"User name: {name}")
         if not llm:
             self.user_info = self._merge_points(self.user_info, extracted_user_info, limit=5)
+            self._write_snapshot()
             return
         prompt = (
             "From the user's new query, extract only explicit, durable facts that are useful for future responses. "
@@ -106,6 +134,7 @@ class ShortTermMemory:
         except Exception:
             pass
         self.user_info = self._merge_points(self.user_info, extracted_user_info[:3], limit=5)
+        self._write_snapshot()
 
     def update_from_response(self, response: str, llm) -> None:
         if not response or not llm:
@@ -131,6 +160,7 @@ class ShortTermMemory:
             )
         except Exception:
             pass
+        self._write_snapshot()
 
     def context(self) -> dict:
         return {

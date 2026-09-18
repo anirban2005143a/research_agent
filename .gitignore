@@ -4,6 +4,7 @@ __pycache__/
 .chroma/
 .models/
 documents/
+session_memory_snapshots/
 .streamlit/
 uploads/
 venv

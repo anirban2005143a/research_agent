@@ -45,8 +45,9 @@ class ResearchNodes:
     @log_function
     def scope_gate(self, state):
         """Classify the request and route unrelated requests away from research."""
+        query = str(state.get("query", "")).strip()
         parser = llm_response_fixing_parser(ScopeDecision, self.llm)
-        input_message = f"User request:\n{state.get('query', '')}"
+        input_message = f"User request:\n{query}"
         try:
             decision = parser.parse(
                 invoke_llm(
@@ -215,10 +216,13 @@ class ResearchNodes:
                 ],
             )
             plan = parser.parse(result.content)
-            log(f"graph.plan.created | task_count={len(plan.tasks)}")
-            for index, task in enumerate(plan.tasks, start=1):
+            tasks = [task.strip() for task in plan.tasks if task and task.strip()][:5]
+            if not tasks:
+                tasks = [state["query"]]
+            log(f"graph.plan.created | task_count={len(tasks)}")
+            for index, task in enumerate(tasks, start=1):
                 log(f"graph.plan.task | index={index} | task={task!r}")
-            return {"tasks": plan.tasks, "current_task_index": 0, "tool_responses": []}
+            return {"tasks": tasks, "current_task_index": 0, "tool_responses": []}
         except Exception as exc:
             log(f"graph.plan.fallback | action=original_query | error={exc!r}")
             return {
