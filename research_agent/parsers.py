@@ -20,6 +20,18 @@ class ResearchPlan(BaseModel):
     tasks: list[str] = Field(description="Ordered research tasks to execute one at a time")
 
 
+class ResearchToolCall(BaseModel):
+    name: str = Field(description="Exact name of one available research tool")
+    arguments: dict[str, object] = Field(default_factory=dict, description="Arguments for the selected tool")
+
+
+class ResearchToolSelection(BaseModel):
+    tool_calls: list[ResearchToolCall] = Field(
+        default_factory=list,
+        description="All tool calls needed for the current research task",
+    )
+
+
 class ClarificationDecision(BaseModel):
     needs_clarification: bool = Field(description="Whether the research query needs a user clarification before planning")
     question: str = Field(description="One focused clarification question, or an empty string when clarification is not needed")

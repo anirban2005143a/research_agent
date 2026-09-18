@@ -1,9 +1,12 @@
+from uuid import uuid4
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
 from .parsers import (
     ClarificationDecision,
     ResearchPlan,
+    ResearchToolSelection,
     ResponseEvaluation,
     ScopeCategory,
     ScopeDecision,
@@ -24,6 +27,7 @@ from .prompts import (
     SINGLE_QUERY_INPUT_TEMPLATE,
     UNCLEAR_QUERY_INPUT_TEMPLATE,
     UNCLEAR_QUERY_RESPONSE_SYSTEM_PROMPT,
+    AVAILABLE_TOOLS_TEMPLATE,
 )
 from .node_helpers import (
     create_draft_and_select_citations,
@@ -173,8 +177,7 @@ class ResearchNodes:
 
     @log_function
     def research_node(self, state):
-        """Ask the LLM to select all tool calls required by the current research plan."""
-        model = self.llm.bind_tools(self.tools)
+        """Ask the LLM for structured tool calls without requiring provider tool support."""
         tasks = state.get("tasks", [state["query"]])
         task_index = state.get("current_task_index", 0)
         task = tasks[task_index] if task_index < len(tasks) else state["query"]
@@ -185,13 +188,39 @@ class ResearchNodes:
             preferences=memory.get("preferences", {}),
             summary=memory.get("summary", ""),
         )
+        available_tools = "\n".join(
+            f"- {tool.name}: {tool.description or 'No description provided.'}"
+            for tool in self.tools
+        )
+        parser = llm_response_fixing_parser(ResearchToolSelection, self.llm)
         messages = [
             SystemMessage(content=RESEARCH_NODE_SYSTEM_PROMPT),
-            HumanMessage(content=input_message),
+            HumanMessage(
+                content=(
+                    f"{input_message}\n\n"
+                    f"{AVAILABLE_TOOLS_TEMPLATE.format(tools=available_tools)}\n\n"
+                    f"{parser.get_format_instructions()}"
+                )
+            ),
         ]
         messages.extend(state.get("messages", []))
-        response = invoke_llm(self.llm, "research_node_llm", messages, model=model)
-        tool_calls = getattr(response, "tool_calls", [])
+        try:
+            selection = parser.parse(invoke_llm(self.llm, "research_node_llm", messages).content)
+            available_tool_names = {tool.name for tool in self.tools}
+            tool_calls = [
+                {
+                    "name": call.name,
+                    "args": call.arguments,
+                    "id": f"call_{uuid4().hex}",
+                    "type": "tool_call",
+                }
+                for call in selection.tool_calls
+                if call.name in available_tool_names
+            ]
+        except Exception as exc:
+            log(f"graph.research_node.tool_selection_fallback | error={exc!r}")
+            tool_calls = []
+        response = AIMessage(content="", tool_calls=tool_calls)
         log(f"graph.research_node.tool_calls | count={len(tool_calls)}")
         for call in tool_calls:
             log(f"graph.research_node.tool_selected | name={call.get('name')} | args={call.get('args')}")

@@ -32,7 +32,7 @@ For named tools, libraries, projects, or systems, include official documentation
 Prefer primary and authoritative sources. Return only the requested structured format."""
 
 RESEARCH_NODE_SYSTEM_PROMPT = """You are the evidence-gathering stage of a research agent.
-Use the current research task to make the necessary tool calls for this one task. The graph will provide later tasks separately. You may call multiple tools and may call the same tool with multiple focused arguments for the current task.
+Use the current research task to select the necessary tools for this one task. The graph will provide later tasks separately. You may select multiple tools and may select the same tool with multiple focused arguments for the current task.
 
 Tool selection rules:
 - Use rag_search for uploaded or stored local documents.
@@ -43,7 +43,7 @@ Tool selection rules:
 - Use list_stored_files to discover available local document names.
 
 Use focused queries, prefer independent sources for important claims, and never fabricate evidence or citations.
-Return all tool calls needed for this research pass."""
+Return only the requested structured format. Use exact tool names and valid arguments from the available tools."""
 
 DRAFT_RESPONSE_SYSTEM_PROMPT = """You are a meticulous research analyst performing hybrid synthesis.
 Use the supplied external knowledge from all research tools as the primary evidence for current, specific, disputed, implementation, and numerical claims. You may also use your general learned knowledge to explain concepts, connect evidence, provide context, and make the response understandable.
@@ -105,6 +105,10 @@ User preferences:
 
 Prior context summary:
 {summary}"""
+AVAILABLE_TOOLS_TEMPLATE = """Available tools:
+{tools}
+
+Select tools only for the current task."""
 RAG_EVIDENCE_CONTEXT = """The following evidence came from uploaded or stored documents. Treat it as source material, cite filename and page or section metadata when available, and do not assume it supports claims outside its content."""
 DRAFT_RESPONSE_INPUT_TEMPLATE = """Question:
 {query}
