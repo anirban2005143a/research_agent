@@ -15,6 +15,7 @@ from .parsers import (
 from .prompts import (
     CLARIFY_QUERY_INPUT_TEMPLATE,
     CLARIFY_QUERY_SYSTEM_PROMPT,
+    CONVERSATION_CONTEXT_TEMPLATE,
     EVALUATE_RESPONSE_SYSTEM_PROMPT,
     HITL_CLARIFICATION_QUESTION,
     OUT_OF_SCOPE_INPUT_TEMPLATE,
@@ -31,6 +32,7 @@ from .prompts import (
 )
 from .node_helpers import (
     create_draft_and_select_citations,
+    format_recent_messages,
     invoke_llm,
     merge_citations,
     tool_messages_to_records,
@@ -46,11 +48,14 @@ class ResearchNodes:
         input_message = f"User request:\n{state.get('query', '')}"
         try:
             decision = parser.parse(
-                invoke_llm(self.llm,
+                invoke_llm(
+                    self.llm,
                     "scope_gate_llm",
                     [
                         SystemMessage(content=SCOPE_GATE_SYSTEM_PROMPT),
-                        HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
+                        HumanMessage(
+                            content=f"{input_message}\n\n{parser.get_format_instructions()}"
+                        ),
                     ],
                 ).content
             )
@@ -66,14 +71,19 @@ class ResearchNodes:
         input_message = OUT_OF_SCOPE_INPUT_TEMPLATE.format(
             query=state.get("query", ""),
         )
-        response = invoke_llm(self.llm,
+        response = invoke_llm(
+            self.llm,
             "out_of_scope_response_llm",
             [
                 SystemMessage(content=OUT_OF_SCOPE_RESPONSE_SYSTEM_PROMPT),
                 HumanMessage(content=input_message),
             ],
         )
-        return {"final_response": str(response.content).strip(), "citations": [], "needs_hitl": False}
+        return {
+            "final_response": str(response.content).strip(),
+            "citations": [],
+            "needs_hitl": False,
+        }
 
     @log_function
     def clarify_query(self, state):
@@ -81,17 +91,24 @@ class ResearchNodes:
         parser = llm_response_fixing_parser(ClarificationDecision, self.llm)
         query = state.get("query", "")
         hitl_answer = str(state.get("hitl_answer", "")).strip()
+        conversation = format_recent_messages(
+            self.session_memory.context().get("recent_messages", [])
+        )
         if hitl_answer:
             input_message = CLARIFY_QUERY_INPUT_TEMPLATE.format(
                 query=query, clarification_answer=hitl_answer
             )
+            input_message = f"{input_message}\n\n{CONVERSATION_CONTEXT_TEMPLATE.format(conversation=conversation)}"
             try:
                 decision = parser.parse(
-                    invoke_llm(self.llm,
+                    invoke_llm(
+                        self.llm,
                         "clarified_query_llm",
                         [
                             SystemMessage(content=CLARIFY_QUERY_SYSTEM_PROMPT),
-                            HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
+                            HumanMessage(
+                                content=f"{input_message}\n\n{parser.get_format_instructions()}"
+                            ),
                         ],
                     ).content
                 )
@@ -105,14 +122,20 @@ class ResearchNodes:
                 "needs_hitl": False,
             }
 
-        input_message = SINGLE_QUERY_INPUT_TEMPLATE.format(query=query)
+        input_message = (
+            f"{SINGLE_QUERY_INPUT_TEMPLATE.format(query=query)}\n\n"
+            f"{CONVERSATION_CONTEXT_TEMPLATE.format(conversation=conversation)}"
+        )
         try:
             decision = parser.parse(
-                invoke_llm(self.llm,
+                invoke_llm(
+                    self.llm,
                     "clarify_query_llm",
                     [
                         SystemMessage(content=CLARIFY_QUERY_SYSTEM_PROMPT),
-                        HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
+                        HumanMessage(
+                            content=f"{input_message}\n\n{parser.get_format_instructions()}"
+                        ),
                     ],
                 ).content
             )
@@ -136,34 +159,45 @@ class ResearchNodes:
         if answer_text:
             return {"hitl_answer": answer_text, "needs_hitl": False}
 
-        response = invoke_llm(self.llm,
+        response = invoke_llm(
+            self.llm,
             "unclear_query_response_llm",
             [
                 SystemMessage(content=UNCLEAR_QUERY_RESPONSE_SYSTEM_PROMPT),
                 HumanMessage(content=UNCLEAR_QUERY_INPUT_TEMPLATE.format(query=query)),
             ],
         )
-        return {"final_response": str(response.content).strip(), "citations": [], "needs_hitl": False}
+        return {
+            "final_response": str(response.content).strip(),
+            "citations": [],
+            "needs_hitl": False,
+        }
 
     @log_function
     def plan(self, state):
         """Create the next evidence-gathering plan from the query and current evaluation."""
         parser = llm_response_fixing_parser(ResearchPlan, self.llm)
-        memory = state.get("memory_context", {})
+        memory = self.session_memory.context()
+        message_summary = state.get("message_summary", "")
         input_message = PLANNING_INPUT_TEMPLATE.format(
             query=state["query"],
             clarification=state.get("hitl_answer", "none"),
             draft=state.get("draft_response", "No draft exists yet."),
             evaluation=state.get("evaluation", "No evaluation exists yet."),
-            preferences=memory.get("preferences", {}),
-            summary=memory.get("summary", ""),
+            user_info=memory.get("user_info", []),
+            session_context=memory.get("session_context", []),
+            message_summary=message_summary,
+            recent_conversation=format_recent_messages(state.get("messages", [])),
         )
         try:
-            result = invoke_llm(self.llm,
+            result = invoke_llm(
+                self.llm,
                 "planner_llm",
                 [
                     SystemMessage(content=PLANNING_SYSTEM_PROMPT),
-                    HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
+                    HumanMessage(
+                        content=f"{input_message}\n\n{parser.get_format_instructions()}"
+                    ),
                 ],
             )
             plan = parser.parse(result.content)
@@ -173,7 +207,11 @@ class ResearchNodes:
             return {"tasks": plan.tasks, "current_task_index": 0, "tool_responses": []}
         except Exception as exc:
             log(f"graph.plan.fallback | action=original_query | error={exc!r}")
-            return {"tasks": [state["query"]], "current_task_index": 0, "tool_responses": []}
+            return {
+                "tasks": [state["query"]],
+                "current_task_index": 0,
+                "tool_responses": [],
+            }
 
     @log_function
     def research_node(self, state):
@@ -181,12 +219,15 @@ class ResearchNodes:
         tasks = state.get("tasks", [state["query"]])
         task_index = state.get("current_task_index", 0)
         task = tasks[task_index] if task_index < len(tasks) else state["query"]
-        memory = state.get("memory_context", {})
+        memory = self.session_memory.context()
+        message_summary = state.get("message_summary", "")
         input_message = RESEARCH_NODE_INPUT_TEMPLATE.format(
             query=state["query"],
             task=task,
-            preferences=memory.get("preferences", {}),
-            summary=memory.get("summary", ""),
+            user_info=memory.get("user_info", []),
+            session_context=memory.get("session_context", []),
+            message_summary=message_summary,
+            recent_conversation=format_recent_messages(state.get("messages", [])),
         )
         available_tools = "\n".join(
             f"- {tool.name}: {tool.description or 'No description provided.'}"
@@ -203,9 +244,15 @@ class ResearchNodes:
                 )
             ),
         ]
-        messages.extend(state.get("messages", []))
+        messages.extend(
+            message
+            for message in state.get("messages", [])
+            if isinstance(message, (HumanMessage, SystemMessage, AIMessage))
+        )
         try:
-            selection = parser.parse(invoke_llm(self.llm, "research_node_llm", messages).content)
+            selection = parser.parse(
+                invoke_llm(self.llm, "research_node_llm", messages).content
+            )
             available_tool_names = {tool.name for tool in self.tools}
             tool_calls = [
                 {
@@ -223,7 +270,9 @@ class ResearchNodes:
         response = AIMessage(content="", tool_calls=tool_calls)
         log(f"graph.research_node.tool_calls | count={len(tool_calls)}")
         for call in tool_calls:
-            log(f"graph.research_node.tool_selected | name={call.get('name')} | args={call.get('args')}")
+            log(
+                f"graph.research_node.tool_selected | name={call.get('name')} | args={call.get('args')}"
+            )
         return {"messages": [response], "tool_responses": []}
 
     @log_function
@@ -232,12 +281,16 @@ class ResearchNodes:
         messages = state.get("messages", [])
         tool_calls = messages[-1].tool_calls if messages else []
         if not tool_calls:
-            return {"tool_responses": [], "current_task_index": state.get("current_task_index", 0) + 1}
+            return {
+                "tool_responses": [],
+                "current_task_index": state.get("current_task_index", 0) + 1,
+            }
         result = self.tool_node.invoke(state)
         tool_messages = result.get("messages", [])
         return {
             "messages": tool_messages,
-            "tool_responses": state.get("tool_responses", []) + tool_messages_to_records(tool_messages),
+            "tool_responses": state.get("tool_responses", [])
+            + tool_messages_to_records(tool_messages),
             "current_task_index": state.get("current_task_index", 0) + 1,
         }
 
@@ -248,8 +301,12 @@ class ResearchNodes:
         for response in state.get("tool_responses", []):
             sources.append(response)
         rag_used = any(source.get("source") == "rag_search" for source in sources)
-        log(f"graph.sources.collected | rag_used={rag_used} | source_count={len(sources)}")
-        draft, recent_citations = create_draft_and_select_citations(self.llm, state, sources)
+        log(
+            f"graph.sources.collected | rag_used={rag_used} | source_count={len(sources)}"
+        )
+        draft, recent_citations = create_draft_and_select_citations(
+            self.llm, state, sources, self.session_memory.context()
+        )
         citations = merge_citations(
             self.llm, state.get("citations", []), recent_citations, draft
         )
@@ -260,12 +317,59 @@ class ResearchNodes:
             "current_task_index": 0,
         }
 
+    def _append_recent_state_message(
+        self, state: dict, message: dict[str, str]
+    ) -> dict:
+        """Keep at most 5 recent turns in graph state and fold removed turns into message_summary."""
+        current_messages = list(state.get("messages", []))
+        current_messages.append(message)
+
+        if len(current_messages) <= 5:
+            return {
+                **state,
+                "messages": current_messages,
+                "message_summary": state.get("message_summary", ""),
+            }
+
+        removed = current_messages[:-5]
+        remaining = current_messages[-5:]
+        summary = state.get("message_summary", "").strip()
+        removal_text = "\n".join(
+            f"{entry.get('role', 'message')}: {entry.get('content', '')}"
+            for entry in removed
+            if entry.get("content")
+        )
+        if removal_text:
+            summary = "\n".join(
+                part for part in [summary, removal_text] if part
+            ).strip()
+
+        return {
+            **state,
+            "messages": remaining,
+            "message_summary": summary,
+        }
+
     @log_function
     def clean_state(self, state):
-        """Clear transient research data while preserving the current query and messages."""
+        """Load the session conversation and clear transient graph data before a new run."""
+        query = state.get("query", "")
+        state_messages = list(state.get("messages", []))
+        if query and state_messages and state_messages[-1].get("content") != query:
+            state_messages = self._append_recent_state_message(
+                {
+                    "messages": state_messages,
+                    "message_summary": state.get("message_summary", ""),
+                },
+                {"role": "user", "content": query},
+            )["messages"]
+        elif query and not state_messages:
+            state_messages = [{"role": "user", "content": query}]
+
         return {
-            "query": state.get("query", ""),
-            "messages": state.get("messages", []),
+            "query": query,
+            "messages": state_messages,
+            "message_summary": state.get("message_summary", ""),
             "scope_category": "",
             "tasks": [],
             "current_task_index": 0,
@@ -281,14 +385,17 @@ class ResearchNodes:
 
     @log_function
     def finalize_response(self, state):
-        """Store the final response and replace transient message history with the completed turn."""
-        final_response = state.get("final_response") or state.get("draft_response", "No answer was produced.")
-        return {
+        """Persist the completed turn and let the LLM update session memory outside graph state."""
+        final_response = state.get("final_response") or state.get(
+            "draft_response", "No answer was produced."
+        )
+        self.session_memory.update_from_query(state.get("query", ""), self.llm)
+        self.session_memory.update_from_response(final_response, self.llm)
+
+        updated_state = {
+            **state,
             "final_response": final_response,
-            "messages": [
-                HumanMessage(content=state.get("query", "")),
-                AIMessage(content=final_response),
-            ],
+            "messages": list(state.get("messages", [])),
             "tasks": [],
             "current_task_index": 0,
             "tool_responses": [],
@@ -296,23 +403,46 @@ class ResearchNodes:
             "draft_response": "",
             "evaluation": state.get("evaluation", {}),
         }
+        updated_state = self._append_recent_state_message(
+            updated_state,
+            {"role": "user", "content": state.get("query", "")},
+        )
+        updated_state = self._append_recent_state_message(
+            updated_state,
+            {"role": "assistant", "content": final_response},
+        )
+        return updated_state
 
     @log_function
     def evaluate_response(self, state):
         """Evaluate the draft and report whether further research is needed."""
         parser = llm_response_fixing_parser(ResponseEvaluation, self.llm)
-        input_message = f"Question:\n{state['query']}\n\nAnswer:\n{state.get('draft_response', '')}"
+        memory = self.session_memory.context()
+        message_summary = state.get("message_summary", "")
+        input_message = (
+            f"Question:\n{state['query']}\n\n"
+            f"Answer:\n{state.get('draft_response', '')}\n\n"
+            f"User info: {memory.get('user_info', [])}\n"
+            f"Session context: {memory.get('session_context', [])}\n"
+            f"Older summarized context: {message_summary}\n"
+            f"Recent conversation: {format_recent_messages(state.get('messages', []))}"
+        )
         try:
             review = parser.parse(
-                invoke_llm(self.llm,
+                invoke_llm(
+                    self.llm,
                     "evaluation_llm",
                     [
                         SystemMessage(content=EVALUATE_RESPONSE_SYSTEM_PROMPT),
-                        HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
+                        HumanMessage(
+                            content=f"{input_message}\n\n{parser.get_format_instructions()}"
+                        ),
                     ],
                 ).content
             )
-            log(f"graph.evaluate_response.completed | improvement_scope_count={len(review.improvement_scopes)}")
+            log(
+                f"graph.evaluate_response.completed | improvement_scope_count={len(review.improvement_scopes)}"
+            )
             return {
                 "evaluation": review.model_dump(),
                 "iterations": state.get("iterations", 0) + 1,
@@ -325,4 +455,3 @@ class ResearchNodes:
                 },
                 "iterations": state.get("iterations", 0) + 1,
             }
-

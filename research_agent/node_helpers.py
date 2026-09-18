@@ -17,10 +17,26 @@ from .prompts import (
 from .utils import log, retry_call
 
 
+def format_recent_messages(messages: list[Any]) -> str:
+    """Format stored conversation turns as readable context for an LLM input prompt."""
+    formatted_messages = []
+    for message in messages:
+        if isinstance(message, dict):
+            role = message.get("role", "message")
+            content = message.get("content", "")
+        else:
+            role = getattr(message, "type", "message")
+            content = getattr(message, "content", str(message))
+        if content:
+            formatted_messages.append(f"{role}: {content}")
+    return "\n".join(formatted_messages) or "No previous conversation is available."
+
+
 def create_draft_and_select_citations(
     llm: Any,
     state: dict[str, Any],
     sources: list[dict[str, Any]],
+    session_context: dict[str, Any],
 ) -> tuple[str, list[str]]:
     """Generate an evidence-grounded draft and return the citation strings it selected."""
     evidence_blocks = []
@@ -34,10 +50,19 @@ def create_draft_and_select_citations(
             f"Content: {item.get('content', '')}"
         )
     context = "\n\n--- EVIDENCE ---\n".join(evidence_blocks)
-    memory = state.get("memory_context", {})
+    memory = session_context
+    message_summary = state.get("message_summary", "")
+    recent_context = state.get("messages", [])
     input_message = (
         f"{RAG_EVIDENCE_CONTEXT}\n\n"
-        f"{DRAFT_RESPONSE_INPUT_TEMPLATE.format(query=state['query'], preferences=memory.get('preferences', {}), summary=memory.get('summary', ''), evidence=context or 'No external evidence was found.')}"
+        f"{DRAFT_RESPONSE_INPUT_TEMPLATE.format(
+            query=state['query'],
+            user_info=memory.get('user_info', []),
+            session_context=memory.get('session_context', []),
+            message_summary=message_summary,
+            recent_conversation=format_recent_messages(recent_context),
+            evidence=context or 'No external evidence was found.',
+        )}"
     )
     parser = llm_response_fixing_parser(ResearchDraft, llm)
     try:

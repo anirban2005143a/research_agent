@@ -361,6 +361,18 @@ Graph state follows the evidence through the workflow:
 - `draft_response` and `evaluation` carry the answer and evaluation results until finalization.
 - `final_response` is the user-facing completed response.
 
+### Session Memory
+
+Short-term conversational memory is kept in the in-memory `ShortTermMemory` instance associated with the active session, not in `ResearchState`. `clean_state` starts each run with the session's current context, while `finalize_response` records the completed user/assistant turn and asks the LLM to maintain:
+
+- the last five messages verbatim
+- a summary of older conversation
+- user preferences
+- user information, such as a stated name
+- important research points and session topics
+
+That context is supplied to clarification, planning, research, draft-generation, and evaluation prompts. Starting a new Streamlit session creates a fresh memory store.
+
 ## Logging
 
 The local pipeline prints progress markers such as:

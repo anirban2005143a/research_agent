@@ -6,6 +6,7 @@ from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
 
 from .llm import build_llm
+from .memory import SESSION_MEMORY_STORE, ShortTermMemory
 from .nodes import ResearchNodes
 from .state import ResearchState
 from .tools import build_research_tools
@@ -14,11 +15,27 @@ from .utils import log
 
 
 class ResearchGraph(ResearchNodes):
-    def __init__(self, rag, document_handler: DocumentHandler | None = None, llm=None):
+    def __init__(
+        self,
+        rag,
+        document_handler: DocumentHandler | None = None,
+        llm=None,
+        session_memory=None,
+        session_id: str | None = None,
+    ):
         self.llm = llm or build_llm()
+        self.session_id = session_id or "default"
+        if session_memory is not None:
+            self.session_memory = session_memory
+        else:
+            self.session_memory = SESSION_MEMORY_STORE.get_or_create(self.session_id)
         self.tools = build_research_tools(rag, document_handler=document_handler)
         self.tool_node = ToolNode(self.tools)
         self.graph = self._build().compile(checkpointer=MemorySaver())
+
+    def clear_session_memory(self) -> None:
+        SESSION_MEMORY_STORE.remove(self.session_id)
+        self.session_memory = SESSION_MEMORY_STORE.get_or_create(self.session_id)
 
     def _build(self):
         workflow = StateGraph(ResearchState)
@@ -90,7 +107,6 @@ class ResearchGraph(ResearchNodes):
         messages: list[Any] | None = None,
         hitl_answer: str = "",
         thread_id: str = "default",
-        memory_context: dict[str, Any] | None = None,
     ):
         config = {"configurable": {"thread_id": thread_id}}
         if hitl_answer:
@@ -100,7 +116,6 @@ class ResearchGraph(ResearchNodes):
                 {
                     "query": query,
                     "messages": messages or [],
-                    "memory_context": memory_context or {},
                 },
                 config=config,
             )

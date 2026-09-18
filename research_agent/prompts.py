@@ -74,8 +74,11 @@ Return only the requested structured format."""
 HITL_CLARIFICATION_QUESTION = "What specific scope, timeframe, geography, population, or audience should this research focus on?"
 
 OUT_OF_SCOPE_INPUT_TEMPLATE = "User request:\n{query}"
-CLARIFY_QUERY_INPUT_TEMPLATE = "Original query:\n{query}\n\nClarification answer:\n{clarification_answer}"
+CLARIFY_QUERY_INPUT_TEMPLATE = (
+    "Original query:\n{query}\n\nClarification answer:\n{clarification_answer}"
+)
 SINGLE_QUERY_INPUT_TEMPLATE = "Original query:\n{query}"
+CONVERSATION_CONTEXT_TEMPLATE = "Previous conversation:\n{conversation}"
 UNCLEAR_QUERY_INPUT_TEMPLATE = "User query:\n{query}"
 PLANNING_INPUT_TEMPLATE = """Request:
 {query}
@@ -92,8 +95,17 @@ Evaluation result:
 User preferences:
 {preferences}
 
+User information:
+{user_information}
+
+Important research points:
+{important_points}
+
 Prior context summary:
-{summary}"""
+{summary}
+
+Recent conversation:
+{conversation}"""
 RESEARCH_NODE_INPUT_TEMPLATE = """Research request:
 {query}
 
@@ -103,8 +115,17 @@ Current task:
 User preferences:
 {preferences}
 
+User information:
+{user_information}
+
+Important research points:
+{important_points}
+
 Prior context summary:
-{summary}"""
+{summary}
+
+Recent conversation:
+{conversation}"""
 AVAILABLE_TOOLS_TEMPLATE = """Available tools:
 {tools}
 
@@ -113,11 +134,17 @@ RAG_EVIDENCE_CONTEXT = """The following evidence came from uploaded or stored do
 DRAFT_RESPONSE_INPUT_TEMPLATE = """Question:
 {query}
 
-User preferences:
-{preferences}
+User info:
+{user_info}
 
-Prior context summary:
-{summary}
+Session context:
+{session_context}
+
+Older summarized context:
+{message_summary}
+
+Recent conversation:
+{recent_conversation}
 
 Evidence:
 {evidence}"""

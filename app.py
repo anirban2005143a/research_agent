@@ -5,17 +5,19 @@ from pathlib import Path
 import streamlit as st
 
 from research_agent.graph import ResearchGraph
-from research_agent.memory import ShortTermMemory
+from research_agent.memory import SESSION_MEMORY_STORE
 from research_agent.rag_system import DocumentHandler, HybridRAG
 
 st.set_page_config(page_title="Research Agent", page_icon="R", layout="wide")
 st.title("Research Agent")
 st.caption("Evidence-focused investigation with optional document grounding")
 
-if "memory" not in st.session_state:
-    st.session_state.memory = ShortTermMemory(recent_limit=5)
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
+if "memory" not in st.session_state:
+    st.session_state.memory = SESSION_MEMORY_STORE.get_or_create(st.session_state.session_id)
 if "rag" not in st.session_state:
     st.session_state.document_handler = DocumentHandler(
         Path("documents") / st.session_state.session_id,
@@ -39,8 +41,12 @@ with st.sidebar:
     st.header("Research workspace")
     st.caption(f"Session: `{st.session_state.session_id}`")
     if st.button("Start new session", use_container_width=True):
+        previous_session_id = st.session_state.get("session_id")
+        if previous_session_id:
+            SESSION_MEMORY_STORE.remove(previous_session_id)
         st.session_state.session_id = str(uuid.uuid4())
-        st.session_state.memory = ShortTermMemory(recent_limit=5)
+        st.session_state.chat_history = []
+        st.session_state.memory = SESSION_MEMORY_STORE.get_or_create(st.session_state.session_id)
         st.session_state.document_handler = DocumentHandler(
             Path("documents") / st.session_state.session_id,
         )
@@ -109,19 +115,21 @@ with st.sidebar:
         for file_name in stored_files:
             st.write(f"- {file_name}")
 
-for message in st.session_state.memory.messages:
+for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 question = st.chat_input("Ask a research question")
 if question:
-    st.session_state.memory.add("user", question)
+    st.session_state.chat_history.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
     if st.session_state.graph is None:
         st.session_state.graph = ResearchGraph(
             rag=st.session_state.rag,
             document_handler=st.session_state.document_handler,
+            session_memory=st.session_state.memory,
+            session_id=st.session_state.session_id,
         )
     progress_holder = [None]
     shown_progress = set()
@@ -140,7 +148,6 @@ if question:
                 question,
                 messages=st.session_state.memory.messages,
                 thread_id=st.session_state.thread_id,
-                memory_context=st.session_state.memory.context(),
             )
             if result.get("needs_hitl") and not result.get("hitl_answer"):
                 st.session_state.pending_question = result["hitl_question"]
@@ -150,9 +157,9 @@ if question:
             answer = f"Unable to start the research agent: {exc}"
     if progress_holder[0] is not None:
         progress_holder[0].update(state="complete")
+    st.session_state.chat_history.append({"role": "assistant", "content": answer})
     with st.chat_message("assistant"):
         st.markdown(answer)
-    st.session_state.memory.add("assistant", answer)
 
 if st.session_state.pending_question:
     st.warning(st.session_state.pending_question)
@@ -172,8 +179,6 @@ if st.session_state.pending_question:
                 st.session_state.pending_query,
                 hitl_answer=clarification,
                 thread_id=st.session_state.thread_id,
-                memory_context=st.session_state.memory.context(),
             )
-            st.session_state.memory.add("assistant", result["final_response"])
             st.session_state.pending_query = ""
             st.rerun()
