@@ -1,485 +1,2392 @@
-# Research Agent
+# 🔬 Research Agent
 
-Research Agent is a research-focused assistant that combines LLM-based planning with a local document retrieval pipeline. The project supports evidence-based research questions, optional document grounding, and hybrid retrieval over uploaded files and external sources.
+> An evidence-focused AI research assistant that plans research tasks, selects appropriate tools, gathers information from multiple sources, evaluates the gathered evidence, and produces a grounded final response.
 
-## Current RAG Implementation
+<p align="center">
 
-The active document pipeline is the refactored update package under [research_agent/rag_system_update](research_agent/rag_system_update). The older `research_agent/rag_system/` package remains as a separate legacy implementation and is not the active update path.
+**🧠 Planning   •   🔧 Tool Use   •   📚 RAG   •   🔄 Reflection   •   👤 Human-in-the-Loop   •   💾 Session Memory**
 
-The active package keeps responsibilities separated:
+</p>
 
-- generic validation, persistence, loading, and chunking belong to `DocumentHandler`
-- PDF-specific parsing, markdown conversion, TOC handling, title, author, and heading extraction belong to `PDFDocumentHandler`
-- indexing and retrieval orchestration belong to `HybridRAG`
-- dense retrieval, lexical retrieval, fusion, reranking, and final ranking are separate components
-- `RetrievedChunk` and `SearchResults` are the shared Pydantic data types
+---
 
-## Complete Architecture
+## 📖 Table of Contents
 
-```text
-Input file path
-    |
-    v
-HybridRAG.store_document(file_path)
-    |
-    +--> documents/<session_id>/<filename>
-    |       canonical session copy
-    |
-    +--> DocumentHandler.prepare_file(file_path)
-              |
-              +--> PDFDocumentHandler for PDF files
-              |       +--> pypdf page text and PDF metadata
-              |       +--> pymupdf4llm markdown conversion
-              |       +--> PyMuPDF outline / TOC headings
-              |
-              +--> TextLoader for .txt and .md
-              +--> Docx2txtLoader for .docx
-              +--> python-pptx for .ppt and .pptx
-              |
-              +--> clean text, attach metadata, split into chunks
-    |
-    +--> UUID chunk IDs + Hugging Face embeddings
-    |       |
-    |       +--> Chroma: .chroma/<session_id>
-    |       +--> BM25: rebuilt in memory from session documents
+* [1. Overview](#1-overview)
+* [2. What Problem Does This Solve?](#2-what-problem-does-this-solve)
+* [3. Key Features](#3-key-features)
+* [4. How the System Works](#4-how-the-system-works)
 
-Query
-    |
-    v
-HybridRAG.retrieve(query, k)
-    |
-    +--> dense Chroma candidates
-    +--> BM25 lexical candidates
-    +--> Reciprocal Rank Fusion
-    +--> cross-encoder reranking
-    +--> weighted harmonic final ranking
-    +--> SearchResults(results=[RetrievedChunk, ...])
-```
+  * [4.1 High-Level Architecture](#41-high-level-architecture)
+  * [4.2 Agent vs RAG](#42-agent-vs-rag)
+* [5. Research Graph](#5-research-graph)
 
-## Package Layout
+  * [5.1 Complete Research Graph Flow](#51-complete-research-graph-flow)
+  * [5.2 Step-by-Step Explanation](#52-step-by-step-explanation)
+  * [5.3 Research Iteration Loop](#53-research-iteration-loop)
+* [6. Agent Components](#6-agent-components)
 
-```text
-research_agent/
-├── config.py
-├── rag_system/                         legacy implementation
-└── rag_system_update/
-    ├── __init__.py
-    ├── main.py                          interactive CLI checker
-    ├── rag_engine.py                    HybridRAG orchestration
-    ├── data_types.py                    Pydantic RetrievedChunk/SearchResults
-    ├── dense_retriever.py               Chroma and embedding retrieval
-    ├── lexical_retriever.py             BM25 retrieval
-    ├── rrf_ranker.py                    rank fusion
-    ├── cross_encoder_ranker.py          candidate reranking
-    ├── overall_ranker.py                final ranking
-    ├── document_handler/
-    │   ├── __init__.py
-    │   ├── document_handler.py          generic loading/storage/chunking
-    │   └── pdf_handler.py               PDF parsing and metadata
-    ├── Artificial_Intelligence/         benchmark PDF corpus
-    └── rag_evaluation_research_papers/  benchmark code and cases
-```
+  * [6.1 Scope Gate](#61-scope-gate)
+  * [6.2 Clarification / HITL](#62-clarification--hitl)
+  * [6.3 Planning](#63-planning)
+  * [6.4 Research Node](#64-research-node)
+  * [6.5 Tool Execution](#65-tool-execution)
+  * [6.6 Information Collection](#66-information-collection)
+  * [6.7 Response Evaluation](#67-response-evaluation)
+  * [6.8 Finalization](#68-finalization)
+* [7. Tools Available to the Agent](#7-tools-available-to-the-agent)
+* [8. RAG System](#8-rag-system)
 
-## Supported Document Types
+  * [8.1 What RAG Does](#81-what-rag-does)
+  * [8.2 RAG Architecture](#82-rag-architecture)
+  * [8.3 Document Ingestion](#83-document-ingestion)
+  * [8.4 Retrieval Pipeline](#84-retrieval-pipeline)
+  * [8.5 Dense Retrieval](#85-dense-retrieval)
+  * [8.6 BM25 Retrieval](#86-bm25-retrieval)
+  * [8.7 Reciprocal Rank Fusion](#87-reciprocal-rank-fusion)
+  * [8.8 Cross-Encoder Reranking](#88-cross-encoder-reranking)
+  * [8.9 Final Ranking](#89-final-ranking)
+* [9. Complete Agent + RAG Interaction](#9-complete-agent--rag-interaction)
+* [10. Session Memory](#10-session-memory)
+* [11. Streamlit Application](#11-streamlit-application)
+* [12. Project Structure](#12-project-structure)
+* [13. Important Files](#13-important-files)
+* [14. Technology Stack](#14-technology-stack)
+* [15. Installation](#15-installation)
+* [16. Environment Configuration](#16-environment-configuration)
+* [17. Running the Application](#17-running-the-application)
+* [18. Using Document RAG](#18-using-document-rag)
+* [19. Example Research Flow](#19-example-research-flow)
+* [20. Data Flow](#20-data-flow)
+* [21. Error Handling and Reliability](#21-error-handling-and-reliability)
+* [22. Logging](#22-logging)
+* [23. Design Principles](#23-design-principles)
+* [24. Limitations and Notes](#24-limitations-and-notes)
+* [25. Future Improvements](#25-future-improvements)
+* [26. License](#26-license)
 
-The active `DocumentHandler` allows:
+---
 
-- `.pdf`
-- `.md`
-- `.ppt`
-- `.pptx`
-- `.docx`
-- `.txt`
+# 1. Overview
 
-Anything outside this allowlist is rejected during file preparation.
+**Research Agent** is an AI-powered research system designed to answer research-oriented questions by combining:
 
-## Core API
+* Large Language Models (LLMs)
+* Structured research planning
+* Multiple external and local tools
+* Document-based RAG
+* Session memory
+* Human-in-the-loop clarification
+* Evidence collection
+* Response evaluation
+* Citation/source grounding
 
-### `HybridRAG`
+The important idea is that this project is **not simply a chatbot** and **not simply a RAG application**.
 
-```python
-from research_agent.rag_system_update.rag_engine import HybridRAG
+The central component is the **Research Agent**.
 
-rag = HybridRAG(session_id="my-research-session")
-rag.store_document("path/to/paper.pdf")
-results = rag.retrieve("What evidence supports the main conclusion?", k=5)
-```
+The agent decides:
 
-The `session_id` isolates both storage namespaces:
+> **What should I research? → How should I break it down? → Which tool should I use? → Do I have enough evidence? → Should I research more? → What should the final answer contain?**
 
-- original files: `DOCUMENTS_DIR/<session_id>/`
-- vector database: `CHROMA_DIR/<session_id>/`
-- Chroma collection: sanitized session-specific collection name
+RAG is one of the tools available to the agent when the answer requires information from documents uploaded by the user.
 
-A query never searches another session's collection.
+---
 
-### Ingestion contract
+# 2. What Problem Does This Solve?
 
-```python
-count = rag.store_document(file_path, progress_callback=None)
-```
-
-- The RAG API accepts one file path, never a directory.
-- Directory expansion belongs only to a CLI or benchmark wrapper.
-- An external file is copied into the session directory before parsing.
-- Re-uploading the same basename replaces the session file and deletes its old Chroma chunks before re-indexing.
-- The return value is the number of chunks indexed.
-
-### Retrieval contract
-
-`HybridRAG.retrieve()` returns a Pydantic `SearchResults` object:
-
-```python
-SearchResults(
-    results=[
-        RetrievedChunk(
-            chunk_id="uuid",
-            document=Document(...),
-            rrf_score=0.02,
-            rrf_normalized=0.5,
-            similarity_score=0.85,
-            cross_encoder_score=0.03,
-            cross_encoder_normalized=0.51,
-            final_score=0.50,
-        )
-    ]
-)
-```
-
-The CLI and benchmark serialize each chunk to this JSON shape:
-
-```json
-{
-  "content": "retrieved chunk text",
-  "metadata": {
-    "chunk_id": "uuid",
-    "filename": "paper.pdf",
-    "source": "paper.pdf",
-    "similarity_score": 0.85,
-    "title": "Document title",
-    "heading": "Current section heading",
-    "section_heading": "Current section heading",
-    "page_number": "6",
-    "authors": ["Author Name"],
-    "score": 0.60,
-    "rrf_score": 0.02,
-    "cross_encoder_score": 0.03
-  }
-}
-```
-
-`chunk_id` is a UUID assigned at storage time and shared by dense and BM25 retrieval so RRF can identify the same chunk.
-
-## Ingestion Details
-
-### Generic document handling
-
-`DocumentHandler.prepare_file()` validates a single path, dispatches by extension, loads LangChain `Document` objects, cleans their text, attaches default source/filename metadata, and calls `generate_chunks()`.
-
-Chunking uses `RecursiveCharacterTextSplitter` with:
-
-- `RAG_CHUNK_SIZE`
-- `RAG_CHUNK_OVERLAP`
-- paragraph, line, sentence, semicolon, comma, word, and character separators
-
-### PDF handling
-
-`PDFDocumentHandler` processes PDFs page by page using:
-
-1. `pypdf` for page text and embedded metadata
-2. `pymupdf4llm.to_markdown(path, use_ocr=False)` for structure-aware markdown
-3. PyMuPDF outline/table-of-contents data when available
-
-The parser captures title and authors from PDF metadata when available. Heading and section metadata comes from the document's markdown/outline structure, with page text as a fallback. The filename is a source identifier, not a document title.
-
-Each PDF page receives metadata such as:
-
-- `filename`
-- `source`
-- `title`
-- `heading`
-- `section_heading`
-- `page_number`
-- `authors`, when available
-
-### UUID and replacement behavior
-
-Each stored chunk receives `metadata["chunk_id"] = uuid.uuid4()`. The same UUID is passed to Chroma. Before re-indexing a file, the retriever deletes all chunks whose `filename` matches the incoming basename.
-
-## Retrieval And Ranking
-
-### Dense retrieval
-
-`dense_retriever.py` uses normalized Hugging Face embeddings with LangChain Chroma. Persistent storage is under `CHROMA_DIR/<session_id>`. Dense and lexical retrieval each request up to:
+A normal LLM can answer a question directly:
 
 ```text
-RAG_TOP_K * RAG_CANDIDATE_MULTIPLIER
+User
+  ↓
+LLM
+  ↓
+Answer
 ```
 
-### BM25 lexical retrieval
+But this approach has limitations:
 
-`lexical_retriever.py` builds an in-memory BM25 index from all documents in the current session's Chroma collection. It is rebuilt after ingestion and when `HybridRAG` starts. It helps with exact names, acronyms, numbers, and terminology.
+* The model may not have the required information.
+* The question may require multiple sources.
+* The question may be too broad.
+* Important details may exist inside uploaded documents.
+* A single answer generation step may not be enough.
+* The model may need to verify whether its answer is sufficiently supported.
 
-### Reciprocal Rank Fusion
+This project instead uses a research workflow:
 
-`rrf_ranker.py` joins dense and BM25 results by UUID. With smoothing value `60`, rank `r` contributes:
-
-$$
-\operatorname{RRF}(r) = \frac{1}{60 + r}
-$$
-
-The result is normalized against the theoretical maximum score for rank one in both retrievers and passed to the next stage.
-
-### Cross-encoder reranking
-
-`cross_encoder_ranker.py` scores `(query, chunk_text)` pairs only after RRF has reduced the candidate set. Raw scores are converted with a sigmoid into `cross_encoder_normalized`. The model is loaded once at module import and reused. Set `CROSS_ENCODER_ENABLED=false` to disable it.
-
-### Final ranking
-
-`overall_ranker.py` combines `rrf_normalized` and `cross_encoder_normalized` with a weighted harmonic mean. The RRF weight is the sum of `RAG_DENSE_WEIGHT` and `RAG_BM25_WEIGHT`; the cross-encoder weight is `RAG_CROSS_ENCODER_WEIGHT`.
-
-## Configuration
-
-Settings are loaded from `.env` by `research_agent/config.py`.
-
-| Variable | Default | Purpose |
-|---|---:|---|
-| `DOCUMENTS_DIR` | `documents` | Session file storage root |
-| `CHROMA_DIR` | `.chroma` | Persistent Chroma root |
-| `EMBEDDING_MODEL_ID` | `BAAI/bge-m3` in shared settings | Embedding model setting |
-| `EMBEDDING_CACHE_DIR` | `.models` | Model cache directory |
-| `EMBEDDING_LOCAL_FILES_ONLY` | `false` | Disable model downloads |
-| `CROSS_ENCODER_MODEL_ID` | `BAAI/bge-reranker-v2-m3` | Cross-encoder model |
-| `CROSS_ENCODER_ENABLED` | `true` | Enable cross-encoder |
-| `CROSS_ENCODER_BATCH_SIZE` | `8` | Cross-encoder batch size |
-| `CROSS_ENCODER_LOCAL_FILES_ONLY` | `false` | Use cached reranker only |
-| `CROSS_ENCODER_CACHE_DIR` | `.models` | Cross-encoder cache directory |
-| `RAG_CHUNK_SIZE` | `900` | Maximum chunk size |
-| `RAG_CHUNK_OVERLAP` | `140` | Chunk overlap |
-| `RAG_EMBEDDING_BATCH_SIZE` | `16` | Embedding batch size |
-| `RAG_TOP_K` | `8` | Default final result count |
-| `LLM_CALL_DELAY_SECONDS` | `20` | Delay before each LLM call |
-| `MAX_RETRIES` | `3` | Maximum attempts for retryable operations |
-| `RETRY_DELAY_SECONDS` | `1` | Fixed delay between retry attempts |
-| `SESSION_MEMORY_SNAPSHOT_DIR` | `session_memory_snapshots` | Diagnostic JSON mirror of per-session RAM memory |
-
-## Session Memory And Conversation Compaction
-
-The runtime memory model is intentionally separated from graph state so long-lived user/session facts do not pollute the workflow state.
-
-### Process-level in-memory session store
-
-The project keeps a single RAM registry keyed by `session_id`:
-
-- each session has its own `ShortTermMemory` instance
-- memory is stored in `SESSION_MEMORY_STORE`
-- the store is created once per Python process and lives only in memory
-- when a session ends or a new session starts, the old entry is removed from RAM
-
-This prevents memory leakage across concurrent sessions. The `ResearchGraph` reads and writes session-scoped memory through the session key instead of storing large memory objects in the graph state.
-
-### Compact durable memory
-
-The memory payload is intentionally small and structured:
-
-- `user_info`: a short deduplicated list of durable facts about the user, such as role, preferences, domain, or constraints
-- `session_context`: a short deduplicated list of durable facts about the current research session, such as topic, unresolved questions, or important findings
-
-These are not raw transcripts and not large conversation snapshots. Instead, they are extracted from:
-
-- the latest user query via `update_from_query()`
-- the final answer via `update_from_response()`
-
-Each list is maintained with a strict cap and deduplication logic so the memory stays compact and relevant.
-
-### Graph state conversation window
-
-The graph state keeps only recent interaction history and does not store the full long-term transcript.
-
-- maximum of 5 recent user/assistant turns remain in `state["messages"]`
-- older turns are removed from the active graph state
-- the condensed older context is moved into `state["message_summary"]`
-
-The compaction rule is:
-
-1. append the newest turn to the message list
-2. if the list exceeds 5 turns, remove the oldest turns
-3. summarize those removed turns into `message_summary`
-4. keep only the latest 5 turns in `messages`
-
-This keeps the state lean while preserving the essential context needed for planning and evaluation.
-
-### Prompt integration
-
-Drafting and evaluation both receive the compact memory and summary context:
-
-- `user_info`
-- `session_context`
-- `message_summary`
-- recent conversation window
-
-This allows the model to answer with memory continuity without needing large graph-state history.
-
-### Session lifecycle behavior
-
-The Streamlit app creates a fresh session identifier and clears the old in-RAM memory when a new session begins. This guarantees that the memory for one chat does not bleed into another chat.
-
-For demonstration and inspection, each session also writes a JSON snapshot under `SESSION_MEMORY_SNAPSHOT_DIR` (by default `session_memory_snapshots/`). This is only a diagnostic mirror of `user_info` and `session_context`; the agent never reads it during a request, and runtime memory remains in the process-level RAM store.
-
-In short, the design now follows this pattern:
-
-- short-lived graph state: only recent messages + summary
-- long-lived runtime memory: compact per-session facts in RAM only
-- session cleanup: remove the memory entry on session end
-| `RAG_CANDIDATE_MULTIPLIER` | `6` | Candidate expansion factor |
-| `HUGGINGFACEHUB_API_TOKEN1` ... `HUGGINGFACEHUB_API_TOKEN5` | empty | Hugging Face authentication and rate-limit rotation |
-| `HF_PROVIDER` | `auto` | Hugging Face provider |
-| `RAG_DENSE_WEIGHT` | `0.35` | Dense retrieval contribution |
-| `RAG_BM25_WEIGHT` | `0.25` | BM25 retrieval contribution |
-| `RAG_CROSS_ENCODER_WEIGHT` | `0.40` | Cross-encoder contribution |
-| `MAX_RESEARCH_ITERATIONS` | `2` | Maximum critique iterations |
-
-### Hugging Face Token Rotation
-
-The application reads the numbered variables `HUGGINGFACEHUB_API_TOKEN1` through `HUGGINGFACEHUB_API_TOKEN5` and cycles through the configured tokens when creating LLM clients. If you add or remove token slots, update both the corresponding variables in `.env` and the supported range in `_configured_hf_tokens()` in [research_agent/config.py](research_agent/config.py). Keep `.env` and `.env.example` aligned by variable name, and never commit real token values.
-
-## Running The RAG Pipeline
-
-From the project root:
-
-```powershell
-python -m research_agent.rag_system_update.main
+```text
+                         ┌─────────────────┐
+                         │   User Query    │
+                         └────────┬────────┘
+                                  ↓
+                         ┌─────────────────┐
+                         │ Research Agent  │
+                         └────────┬────────┘
+                                  ↓
+                         Understand Question
+                                  ↓
+                           Create Research Plan
+                                  ↓
+                       Select Appropriate Tools
+                                  ↓
+                    ┌─────────────┼─────────────┐
+                    ↓             ↓             ↓
+                 Web Search      RAG         arXiv / Wiki
+                    │             │             │
+                    └─────────────┼─────────────┘
+                                  ↓
+                         Collect Evidence
+                                  ↓
+                           Draft Response
+                                  ↓
+                         Evaluate Response
+                                  ↓
+                     ┌────────────┴────────────┐
+                     │                         │
+               Needs more work?              No
+                     │                         │
+                    Yes                       ↓
+                     │                  Final Response
+                     └──────→ Research
 ```
 
-The current CLI prompts for a query, session ID, and top-k, then prints serialized retrieval results. Its directory discovery/indexing helpers are intended for test workflows; the core RAG API remains single-file.
+This makes the system **agentic** because the LLM participates in deciding what actions should happen next.
 
-## Research-Paper Evaluation
+---
 
-The evaluation code is under [research_agent/rag_system_update/rag_evaluation_research_papers](research_agent/rag_system_update/rag_evaluation_research_papers). Its intended source PDFs are under `research_agent/rag_system_update/Artificial_Intelligence/`.
+# 3. Key Features
 
-Important files:
+## 🧠 Intelligent Research Planning
 
-- `process_doc_and_query.py`: corpus processing, query execution, scoring, and report writing
-- `evaluate_retrieval.py`: source matching and per-query scoring
-- `eval_cases.json`: questions, expected source files, and relevant pages
-- `eval_cases.jsonl`: alternate JSONL benchmark format
-- `eval_results.json`: generated report
+The agent does not necessarily research the original question as one large task.
 
-Run it with:
+The planner breaks the question into smaller research tasks.
 
-```powershell
-python -m research_agent.rag_system_update.rag_evaluation_research_papers.process_doc_and_query
+For example:
+
+```text
+User:
+"How does RAG compare with fine-tuning for enterprise applications?"
+
+                 ↓
+
+Research Plan
+
+Task 1 → Understand RAG
+Task 2 → Understand fine-tuning
+Task 3 → Compare advantages
+Task 4 → Compare limitations
+Task 5 → Analyze enterprise use cases
 ```
 
-The evaluator checks whether normalized `source` or `filename` metadata matches the expected source. It reports:
+The agent then executes these tasks sequentially.
 
-- `precision@k`
-- `hits@k`
-- `misses@k`
-- matched and unmatched result lists
+---
 
-Recall is intentionally not reported because the benchmark does not know the total number of relevant documents in the vector database. The evaluation package uses `HybridRAG` and should not bypass the active ingestion/retrieval engine.
+## 🔧 Multiple Research Tools
 
-Current implementation note: `process_source_directory()` creates the session RAG engine, but its loop over `Artificial_Intelligence/*.pdf` is currently commented out. Uncomment or restore that loop before expecting a fresh evaluation run to index the benchmark corpus.
+The agent can choose between different tools depending on the research requirement.
 
-## Research Workflow
+Current tools include:
 
-The broader Research Agent still follows this high-level pattern:
+* `web_search`
+* `rag_search`
+* `read_stored_file`
+* `list_stored_files`
+* `wikipedia_search`
+* `arxiv_search`
 
-1. classify whether a request is in scope
-2. plan a research path when needed
-3. select tools and external evidence sources
-4. index and query uploaded documents using the RAG pipeline
-5. synthesize a final answer with citations and source grounding
+The LLM is responsible for selecting appropriate tools for the current research task.
 
-The RAG package supplies grounded evidence; the broader agent is responsible for planning, tool use, synthesis, and final response generation.
+---
 
-### Research Graph Flow
+## 📚 Document-Based RAG
 
-The research graph is implemented by `ResearchGraph` in `research_agent/graph.py`. Scope routing sends out-of-scope requests to an LLM-guided response and sends in-scope requests through conditional clarification, planning, sequential task execution, response aggregation, drafting, and evaluation.
+Users can upload documents such as:
+
+* PDF
+* DOCX
+* TXT
+* Markdown
+* CSV
+* JSON
+* HTML
+* XML
+* Python files
+* XLSX
+* PPTX
+
+The Streamlit interface accepts these uploads and sends them through the document indexing pipeline.
+
+The RAG system then:
+
+```text
+Document
+   ↓
+Load
+   ↓
+Clean
+   ↓
+Chunk
+   ↓
+Embedding
+   ↓
+Chroma Vector Store
+   +
+BM25 Index
+```
+
+When the agent decides that local documents are useful:
+
+```text
+Research Task
+     ↓
+rag_search
+     ↓
+HybridRAG
+     ↓
+Relevant document chunks
+     ↓
+Agent
+```
+
+---
+
+## 👤 Human-in-the-Loop
+
+If the research question is unclear, the agent can stop and ask the user for clarification.
+
+For example:
+
+```text
+User:
+"Research Apple."
+
+Agent:
+"Which aspect of Apple would you like me to research?
+Products, financial performance, history, or recent developments?"
+```
+
+The user's answer is then fed back into the graph.
+
+---
+
+## 🔄 Response Evaluation
+
+The agent does not immediately finalize every research result.
+
+After collecting evidence and creating a draft, the system evaluates the response.
+
+If improvement is required:
+
+```text
+Evaluation
+    ↓
+Needs improvement
+    ↓
+Back to Planning
+    ↓
+Additional research
+    ↓
+New draft
+```
+
+The graph allows bounded iterative improvement rather than an unlimited loop.
+
+---
+
+## 💾 Session Memory
+
+Each research session has its own memory.
+
+The memory stores compact information such as:
+
+* user information
+* user preferences
+* session context
+* important research findings
+* recent conversation
+* summarized older conversation
+
+The system also keeps the graph state relatively small by maintaining a limited recent conversation window and summarizing older turns.
+
+---
+
+# 4. How the System Works
+
+## 4.1 High-Level Architecture
+
+The entire system can be understood as five major layers:
 
 ```mermaid
 flowchart TD
-    START([START]) --> CLEAN[clean_state]
 
-    SCOPE -->|out_of_scope| OUT_OF_SCOPE[out_of_scope_response]
-    SCOPE -->|any allowed request| CLARIFY{{clarify_query<br/>LLM decides whether clarification is needed}}
+    USER([👤 User])
 
-    OUT_OF_SCOPE --> FINALIZE[finalize_response]
-    CLARIFY -->|query is clear| PLAN
-    CLARIFY -->|clarification needed| HITL{{HITL question}}
-    HITL -->|user answers| CLARIFY
-    HITL -->|user skips| UNCLEAR[LLM unclear-query response]
-    UNCLEAR --> FINALIZE
-    FINALIZE --> END([END])
+    UI[🖥️ Streamlit UI]
 
-    PLAN --> AGENT[research_node<br/>one task at a time]
-    AGENT --> TOOLS[execute_tools]
-    TOOLS -->|tasks remain| AGENT
-    TOOLS -->|all tasks complete| COLLECT[collect_informations<br/>aggregate, draft, store citations]
+    AGENT[🧠 Research Agent]
 
-    COLLECT --> EVALUATE[evaluate_response]
-    EVALUATE -->|needs improvement and iterations < 3| PLAN
-    EVALUATE -->|accepted or iterations = 3| FINALIZE
+    TOOLS[🔧 Research Tools]
 
-    CLEAN --> SCOPE
+    SOURCES[🌐 External Sources]
+
+    RAG[📚 RAG Tool]
+
+    DOCS[(📄 Uploaded Documents)]
+
+    MEMORY[(💾 Session Memory)]
+
+    LLM[🤖 LLM]
+
+    USER --> UI
+
+    UI --> AGENT
+
+    AGENT --> LLM
+    AGENT --> TOOLS
+    AGENT --> MEMORY
+
+    TOOLS --> SOURCES
+    TOOLS --> RAG
+
+    RAG --> DOCS
+
+    SOURCES --> TOOLS
+    RAG --> TOOLS
+
+    TOOLS --> AGENT
+
+    AGENT --> UI
+    UI --> USER
 ```
 
-Graph state follows the evidence through the workflow:
-
-- `messages` is transient during tool execution and is replaced at finalization with the normalized query and final response.
-- `tasks` stores the ordered research tasks; `current_task_index` identifies the task being executed.
-- `tool_responses` stores raw tool output records with content and source information.
-- `citations` stores the deduplicated citation strings selected by the LLM in `collect_informations`.
-- `draft_response` and `evaluation` carry the answer and evaluation results until finalization.
-- `final_response` is the user-facing completed response.
-
-### Session Memory
-
-Short-term conversational memory is kept in the in-memory `ShortTermMemory` instance associated with the active session, not in `ResearchState`. `clean_state` starts each run with the session's current context, while `finalize_response` records the completed user/assistant turn and asks the LLM to maintain:
-
-- the last five messages verbatim
-- a summary of older conversation
-- user preferences
-- user information, such as a stated name
-- important research points and session topics
-
-That context is supplied to clarification, planning, research, draft-generation, and evaluation prompts. Starting a new Streamlit session creates a fresh memory store.
-
-## Logging
-
-The local pipeline prints progress markers such as:
+### The important relationship
 
 ```text
-[RAG][DOCUMENT]       source loading
-[RAG][CHUNKING]       chunk creation
-[RAG][EMBEDDING]      embedding batches
-[RAG][VECTOR STORE]   Chroma writes/deletes
-[RAG][BM25]           lexical index state
-[RAG][QUERY]          incoming query
-[RAG][RETRIEVAL]      dense and lexical counts
-[RAG][RRF]            fusion count
-[RAG][CROSS ENCODER]  reranking
-[RAG][FINAL RANKING]  selected results
+                         RESEARCH AGENT
+                               │
+            ┌──────────────────┼──────────────────┐
+            │                  │                  │
+            ▼                  ▼                  ▼
+          LLM               Tools             Memory
+                               │
+              ┌────────────────┼────────────────┐
+              │        │       │       │        │
+              ▼        ▼       ▼       ▼        ▼
+             Web      RAG    Wiki    arXiv    Files
+                      │
+                      ▼
+                  Documents
 ```
 
-For production, route these events through structured logging and add latency, model failure, parser failure, empty-result, and candidate-count metrics.
+**RAG is inside the tool layer.**
 
-## Production Considerations
+It is not the entire agent.
 
-- Pin compatible versions of Chroma, LangChain, PyMuPDF, `pymupdf4llm`, `pypdf`, and `sentence-transformers`.
-- Decide whether model downloads are allowed; otherwise pre-cache models and enable local-only settings.
-- Validate and sanitize session IDs and uploaded filenames.
-- Add file-size, page-count, timeout, and memory limits for PDF parsing.
-- Enable an explicit OCR path for scanned PDFs; the current markdown conversion uses `use_ocr=False`.
-- Add concurrency control around same-file replacement and simultaneous writes.
-- Rebuild BM25 consistently after process restarts, as the current implementation does from session Chroma documents.
-- Add tests for session isolation, overwrite behavior, UUID stability, malformed PDFs, empty documents, and unavailable models.
-- Evaluate content relevance in addition to filename matching before relying on benchmark scores for release decisions.
+---
 
-## Notes
+# 4.2 Agent vs RAG
 
-- The project keeps document parsing and retrieval logic separate.
-- The document loader is intentionally strict about file types.
-- The PDF handler is the only file-type-specific branch in the current update structure.
-- The legacy `rag_system` package remains available as a reference but should not be treated as the active implementation unless intentionally selected.
+This distinction is important.
+
+## Research Agent
+
+The **agent** is responsible for:
+
+* understanding the request
+* deciding whether the request is relevant to research
+* asking for clarification
+* creating a research plan
+* selecting tools
+* executing research tasks
+* collecting evidence
+* creating a draft
+* evaluating the draft
+* deciding whether more research is necessary
+* producing the final answer
+
+---
+
+## RAG
+
+RAG is responsible for:
+
+* loading documents
+* processing documents
+* chunking documents
+* generating embeddings
+* storing chunks
+* retrieving relevant chunks
+* combining dense and lexical retrieval
+* reranking results
+* returning evidence to the agent
+
+Therefore:
+
+```text
+                 Research Agent
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+     Web Tool       RAG Tool       arXiv Tool
+                       │
+                ┌──────┴──────┐
+                │             │
+             Chroma          BM25
+                │             │
+                └──────┬──────┘
+                       │
+                  Reranking
+                       │
+                 RAG Results
+                       │
+                       ▼
+                 Research Agent
+```
+
+---
+
+# 5. Research Graph
+
+The core agent workflow is implemented by:
+
+```text
+research_agent/graph.py
+```
+
+`ResearchGraph` creates a LangGraph `StateGraph` containing the major research nodes and their conditional transitions.
+
+The graph contains:
+
+```text
+clean_state
+scope_gate
+out_of_scope_response
+clarify_query
+plan
+research_node
+execute_tools
+collect_informations
+evaluate_response
+finalize_response
+```
+
+---
+
+# 5.1 Complete Research Graph Flow
+
+> **This is the current Research Graph Flow. The routing below follows the graph implementation and should be treated as the authoritative agent workflow.**
+
+```mermaid
+flowchart TD
+
+    START([START])
+
+    CLEAN[clean_state]
+
+    SCOPE{scope_gate}
+
+    OUT[Out-of-Scope Response]
+
+    CLARIFY{clarify_query}
+
+    HITL{{HITL<br/>Ask User}}
+
+    UNCLEAR[Unclear Query Response]
+
+    PLAN[plan]
+
+    RESEARCH[research_node<br/>One Task at a Time]
+
+    TOOLS[execute_tools]
+
+    COLLECT[collect_informations<br/>Aggregate Evidence + Draft]
+
+    EVALUATE[evaluate_response]
+
+    FINALIZE[finalize_response]
+
+    END([END])
+
+
+    START --> CLEAN
+
+    CLEAN --> SCOPE
+
+
+    SCOPE -->|out_of_scope| OUT
+
+    SCOPE -->|allowed request| CLARIFY
+
+
+    OUT --> FINALIZE
+
+
+    CLARIFY -->|query is clear| PLAN
+
+    CLARIFY -->|clarification needed| HITL
+
+    HITL -->|user answers| CLARIFY
+
+    HITL -->|user skips| UNCLEAR
+
+    UNCLEAR --> FINALIZE
+
+
+    PLAN --> RESEARCH
+
+    RESEARCH --> TOOLS
+
+    TOOLS -->|tasks remain| RESEARCH
+
+    TOOLS -->|all tasks complete| COLLECT
+
+
+    COLLECT --> EVALUATE
+
+    EVALUATE -->|needs improvement<br/>and iterations < 3| PLAN
+
+    EVALUATE -->|accepted OR max iterations| FINALIZE
+
+
+    FINALIZE --> END
+```
+
+The actual graph implementation defines the same major transitions: `clean_state → scope_gate`, scope routing, clarification routing, `plan → research_node → execute_tools`, sequential task looping, information collection, evaluation, bounded re-planning, and finalization.
+
+---
+
+# 5.2 Step-by-Step Explanation
+
+## Step 1 — `clean_state`
+
+The workflow starts by preparing the state for the current research request.
+
+It makes sure the current query and session context are ready for the graph.
+
+```text
+START
+  ↓
+clean_state
+```
+
+---
+
+## Step 2 — `scope_gate`
+
+The agent first determines whether the request belongs to the intended research scope.
+
+```text
+                 scope_gate
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+     Out of scope          Allowed
+          │                   │
+          ▼                   ▼
+ out_of_scope_response   clarify_query
+```
+
+The scope decision is LLM-based and produces a structured classification.
+
+---
+
+## Step 3 — `out_of_scope_response`
+
+If the request is outside the intended research scope, the system generates an appropriate response instead of running the complete research pipeline.
+
+```text
+scope_gate
+    ↓
+out_of_scope_response
+    ↓
+finalize_response
+    ↓
+END
+```
+
+---
+
+## Step 4 — `clarify_query`
+
+For allowed requests, the system checks whether the research question is sufficiently clear.
+
+```text
+clarify_query
+      │
+      ├── Clear ─────────→ plan
+      │
+      └── Unclear ───────→ HITL
+```
+
+The clarification node can also incorporate the user's clarification answer and construct a better final research query.
+
+---
+
+## Step 5 — Human-in-the-Loop
+
+If the question is unclear, the graph can pause and ask the user for clarification.
+
+```text
+        ┌───────────────┐
+        │ clarify_query │
+        └───────┬───────┘
+                │
+         needs clarification
+                ↓
+        ┌───────────────┐
+        │      HITL     │
+        │ Ask the user  │
+        └───────┬───────┘
+                │
+             answer
+                ↓
+        clarify_query
+```
+
+This makes the research process interactive instead of forcing the model to guess the user's intent.
+
+---
+
+# 5.3 Research Iteration Loop
+
+Once the query is clear, the agent creates a plan.
+
+```text
+PLAN
+ ↓
+RESEARCH NODE
+ ↓
+TOOLS
+ ↓
+more tasks?
+ ├── YES → RESEARCH NODE
+ └── NO  → COLLECT
+```
+
+After collecting the evidence:
+
+```text
+COLLECT
+   ↓
+EVALUATE
+   │
+   ├── Needs improvement → PLAN
+   │
+   └── Good enough       → FINALIZE
+```
+
+The graph also contains a maximum iteration safeguard, preventing the evaluation loop from continuing indefinitely. The current graph routes to finalization once the configured iteration boundary is reached.
+
+---
+
+# 6. Agent Components
+
+## 6.1 Scope Gate
+
+**File:**
+
+```text
+research_agent/nodes.py
+```
+
+Purpose:
+
+> Determine whether the user request belongs to the intended research domain.
+
+The node asks the LLM for a structured `ScopeDecision`.
+
+This prevents unrelated requests from unnecessarily entering the research workflow.
+
+---
+
+## 6.2 Clarification / HITL
+
+Purpose:
+
+> Determine whether the research question is clear enough to research.
+
+If necessary:
+
+```text
+Agent
+  ↓
+Question is unclear
+  ↓
+Ask user
+  ↓
+User provides clarification
+  ↓
+Agent updates query
+```
+
+The clarification response is incorporated into the research query before planning.
+
+---
+
+## 6.3 Planning
+
+The `plan` node creates a structured research plan.
+
+Conceptually:
+
+```text
+Research Question
+       ↓
+     Planner
+       ↓
+ ┌─────┼─────┬─────┐
+ ↓     ↓     ↓     ↓
+Task1 Task2 Task3 Task4
+```
+
+The planner receives information such as:
+
+* current query
+* previous draft
+* previous evaluation
+* session context
+* recent conversation
+* user information
+
+The resulting tasks are then executed one at a time.
+
+---
+
+## 6.4 Research Node
+
+The `research_node` decides which tools should be used for the current research task.
+
+It receives:
+
+* original research query
+* current task
+* available tools
+* session memory
+* recent conversation
+* summarized context
+
+The LLM produces structured tool selections.
+
+Conceptually:
+
+```text
+Current Task
+     ↓
+Research Node
+     ↓
+Which tool is useful?
+     │
+ ┌───┼──────┬────────┐
+ ↓   ↓      ↓        ↓
+Web  RAG  Wikipedia arXiv
+```
+
+The implementation constructs tool calls from the LLM's structured selection and validates them against the tools actually available to the graph.
+
+---
+
+## 6.5 Tool Execution
+
+The selected tools are executed by the graph's tool execution stage.
+
+```text
+research_node
+      ↓
+execute_tools
+      ↓
+Tool results
+      ↓
+Research state
+```
+
+If the current plan still contains unfinished tasks:
+
+```text
+execute_tools
+      ↓
+next task
+      ↓
+research_node
+```
+
+Otherwise:
+
+```text
+execute_tools
+      ↓
+collect_informations
+```
+
+---
+
+## 6.6 Information Collection
+
+Once all planned tasks have been completed, the system gathers the tool outputs.
+
+The collection stage:
+
+1. gathers source/tool responses
+2. identifies research evidence
+3. processes citations
+4. creates a draft answer
+5. prepares information for evaluation
+
+The implementation also merges citations and produces a draft response at this stage.
+
+---
+
+## 6.7 Response Evaluation
+
+The draft is then evaluated.
+
+Conceptually:
+
+```text
+              Draft
+                ↓
+          Evaluation
+                ↓
+       ┌────────┴────────┐
+       │                 │
+   Good enough       Needs work
+       │                 │
+       ▼                 ▼
+   Finalize             Plan
+                         ↓
+                   More research
+```
+
+The evaluation determines whether additional research is necessary.
+
+---
+
+## 6.8 Finalization
+
+The finalization stage creates the user-facing response.
+
+At this point the agent has:
+
+* the research query
+* research tasks
+* gathered evidence
+* citations
+* draft response
+* evaluation information
+* session context
+
+The final result is returned to the Streamlit interface.
+
+---
+
+# 7. Tools Available to the Agent
+
+The current research tool layer provides six main tools.
+
+| Tool                | Purpose                                        |
+| ------------------- | ---------------------------------------------- |
+| `web_search`        | Search the web for current/general information |
+| `rag_search`        | Search uploaded/stored documents               |
+| `read_stored_file`  | Read a known stored document                   |
+| `list_stored_files` | Discover available uploaded files              |
+| `wikipedia_search`  | Background information and definitions         |
+| `arxiv_search`      | Academic and technical research                |
+
+---
+
+## Tool Selection Concept
+
+The agent does not have to use every tool.
+
+For example:
+
+### Question
+
+```text
+"What does this uploaded research paper say about transformers?"
+```
+
+Likely useful:
+
+```text
+rag_search
+```
+
+---
+
+### Question
+
+```text
+"What happened in AI research this week?"
+```
+
+Likely useful:
+
+```text
+web_search
+```
+
+---
+
+### Question
+
+```text
+"What does recent academic literature say about RAG evaluation?"
+```
+
+Likely useful:
+
+```text
+arxiv_search
+```
+
+---
+
+### Question
+
+```text
+"What is reinforcement learning?"
+```
+
+Likely useful:
+
+```text
+wikipedia_search
+```
+
+The agent chooses based on the research task rather than blindly calling every tool.
+
+---
+
+# 8. RAG System
+
+RAG stands for:
+
+> **Retrieval-Augmented Generation**
+
+In this project, RAG is **not the main agent**.
+
+It is a specialized research tool used when the agent needs evidence from locally uploaded documents.
+
+---
+
+# 8.1 What RAG Does
+
+Suppose the user uploads:
+
+```text
+research_paper.pdf
+```
+
+and asks:
+
+```text
+"What does the paper say about the limitations of the proposed method?"
+```
+
+Instead of giving the entire PDF to the LLM, the RAG system finds the most relevant portions.
+
+```text
+PDF
+ ↓
+Text Extraction
+ ↓
+Chunking
+ ↓
+Embeddings
+ ↓
+Chroma
+
+Question
+ ↓
+Dense Search ─────┐
+                  ├──→ Fusion → Reranking → Top Results
+Question          │
+ ↓                │
+BM25 Search ──────┘
+```
+
+The selected chunks are then returned to the agent.
+
+---
+
+# 8.2 RAG Architecture
+
+The RAG system is implemented around `HybridRAG`.
+
+Its major components are:
+
+```mermaid
+flowchart TD
+
+    DOC[📄 Uploaded Document]
+
+    HANDLER[Document Handler]
+
+    CHUNK[Chunking]
+
+    EMBED[Hugging Face Embeddings]
+
+    CHROMA[(Chroma Vector Store)]
+
+    BM25[(BM25 Index)]
+
+    QUERY[🔎 Query]
+
+    DENSE[Dense Retrieval]
+
+    LEXICAL[Lexical Retrieval]
+
+    RRF[Reciprocal Rank Fusion]
+
+    CROSS[Cross-Encoder Reranking]
+
+    FINAL[Final Ranking]
+
+    RESULTS[📦 SearchResults]
+
+    DOC --> HANDLER
+    HANDLER --> CHUNK
+    CHUNK --> EMBED
+    EMBED --> CHROMA
+
+    CHUNK --> BM25
+
+    QUERY --> DENSE
+    QUERY --> LEXICAL
+
+    DENSE --> CHROMA
+    CHROMA --> DENSE
+
+    LEXICAL --> BM25
+    BM25 --> LEXICAL
+
+    DENSE --> RRF
+    LEXICAL --> RRF
+
+    RRF --> CROSS
+    CROSS --> FINAL
+    FINAL --> RESULTS
+```
+
+`HybridRAG` orchestrates document ingestion and retrieval while the individual retrievers/rankers remain separate components.
+
+---
+
+# 8.3 Document Ingestion
+
+When a document is uploaded:
+
+```text
+Uploaded File
+     ↓
+DocumentHandler
+     ↓
+Validate File
+     ↓
+Load Content
+     ↓
+Clean Text
+     ↓
+Attach Metadata
+     ↓
+Split into Chunks
+     ↓
+Generate Embeddings
+     ↓
+Store in Chroma
+     ↓
+Rebuild BM25
+```
+
+The RAG pipeline stores documents within a session-specific namespace.
+
+This means different research sessions can maintain separate document stores.
+
+---
+
+## Chunking
+
+Large documents are divided into smaller chunks.
+
+For example:
+
+```text
+Large PDF
+│
+├── Chunk 1
+├── Chunk 2
+├── Chunk 3
+├── Chunk 4
+└── ...
+```
+
+The project uses recursive character-based chunking with configurable chunk size and overlap. The current shared configuration uses a default chunk size of `900` and overlap of `140`.
+
+---
+
+# 8.4 Retrieval Pipeline
+
+When `rag_search` is called:
+
+```mermaid
+flowchart LR
+
+    Q[User Research Task]
+
+    Q --> D[Dense Retrieval]
+    Q --> B[BM25 Retrieval]
+
+    D --> RRF[Reciprocal Rank Fusion]
+    B --> RRF
+
+    RRF --> CE[Cross Encoder]
+
+    CE --> FR[Final Ranking]
+
+    FR --> TOP[Top-K Chunks]
+
+    TOP --> AGENT[Research Agent]
+```
+
+The actual `HybridRAG.retrieve()` implementation performs dense and BM25 retrieval in parallel, fuses the results with RRF, reranks the fused candidates using the cross encoder, and performs final ranking.
+
+---
+
+# 8.5 Dense Retrieval
+
+Dense retrieval converts text into vectors.
+
+For example:
+
+```text
+"How does attention work?"
+            ↓
+       Embedding Model
+            ↓
+[0.12, -0.42, 0.73, ...]
+```
+
+The same process is applied to document chunks.
+
+The system then compares:
+
+```text
+Query Vector
+      ↓
+Vector Similarity
+      ↓
+Most Similar Chunks
+```
+
+The repository uses Hugging Face embeddings with Chroma as the persistent vector store.
+
+---
+
+# 8.6 BM25 Retrieval
+
+Dense retrieval is good at understanding semantic similarity.
+
+However, exact keyword matching is also important.
+
+For example:
+
+```text
+Query:
+"GPT-4o"
+
+Document:
+"GPT-4o"
+```
+
+A lexical system can strongly match the exact term.
+
+The project uses **BM25** for lexical retrieval.
+
+BM25 is useful for:
+
+* exact names
+* acronyms
+* technical terms
+* numbers
+* identifiers
+* terminology
+
+The BM25 index is maintained in memory and rebuilt after document ingestion and when the RAG engine starts.
+
+---
+
+# 8.7 Reciprocal Rank Fusion
+
+The dense and BM25 systems produce two ranked lists.
+
+Example:
+
+```text
+Dense Retrieval:
+
+1. Chunk A
+2. Chunk C
+3. Chunk B
+4. Chunk D
+
+
+BM25:
+
+1. Chunk C
+2. Chunk A
+3. Chunk D
+4. Chunk B
+```
+
+The system combines these rankings using **Reciprocal Rank Fusion (RRF)**.
+
+The implementation uses:
+
+```text
+RRF(r) = 1 / (60 + r)
+```
+
+where `r` is the rank of the result.
+
+A document that appears highly in both retrieval systems receives stronger combined evidence.
+
+---
+
+# 8.8 Cross-Encoder Reranking
+
+After RRF reduces the candidate set, the system performs a more expensive relevance check.
+
+The cross encoder receives:
+
+```text
+(Query, Document Chunk)
+```
+
+For example:
+
+```text
+(
+  "What are the limitations of RAG?",
+  "RAG systems can suffer from retrieval errors..."
+)
+```
+
+The model produces a relevance score.
+
+This stage is more focused than the initial retrieval stage because it works on a smaller candidate set.
+
+The project uses a Sentence Transformers cross encoder and converts its score into a normalized value before final ranking.
+
+---
+
+# 8.9 Final Ranking
+
+The final ranker combines:
+
+```text
+RRF score
++
+Cross-encoder score
+```
+
+using a weighted harmonic mean.
+
+The important idea is:
+
+> A result should perform reasonably well across the retrieval signals instead of being highly ranked by only one signal.
+
+The current `OverallRanker` uses the normalized RRF and cross-encoder scores to produce the final score and select the top results.
+
+---
+
+# 9. Complete Agent + RAG Interaction
+
+This is the most important architectural relationship in the project.
+
+```mermaid
+flowchart TD
+
+    USER([👤 User])
+
+    QUERY[Research Question]
+
+    AGENT[🧠 Research Agent]
+
+    PLAN[Research Plan]
+
+    NODE[Research Node]
+
+    SELECT[Tool Selection]
+
+    WEB[🌐 Web Search]
+
+    RAGTOOL[📚 RAG Tool]
+
+    WIKI[Wikipedia]
+
+    ARXIV[arXiv]
+
+    FILE[📄 Stored File]
+
+    RAG[HybridRAG]
+
+    CHUNKS[Relevant Chunks]
+
+    EVIDENCE[Collected Evidence]
+
+    DRAFT[Draft Response]
+
+    EVAL[Response Evaluation]
+
+    FINAL[Final Answer]
+
+
+    USER --> QUERY
+    QUERY --> AGENT
+
+    AGENT --> PLAN
+    PLAN --> NODE
+    NODE --> SELECT
+
+    SELECT --> WEB
+    SELECT --> RAGTOOL
+    SELECT --> WIKI
+    SELECT --> ARXIV
+
+    RAGTOOL --> RAG
+    FILE --> RAG
+
+    RAG --> CHUNKS
+    CHUNKS --> EVIDENCE
+
+    WEB --> EVIDENCE
+    WIKI --> EVIDENCE
+    ARXIV --> EVIDENCE
+
+    EVIDENCE --> DRAFT
+    DRAFT --> EVAL
+
+    EVAL -->|Needs more research| PLAN
+    EVAL -->|Good enough| FINAL
+
+    FINAL --> USER
+```
+
+### In one sentence:
+
+> **The Research Agent decides what to do; RAG is one of the tools it can use to obtain evidence.**
+
+---
+
+# 10. Session Memory
+
+The project maintains session-specific memory.
+
+The memory system is intentionally separated from the main graph state.
+
+## Memory contains
+
+### User information
+
+Examples:
+
+```text
+User role
+User preferences
+User constraints
+```
+
+### Session context
+
+Examples:
+
+```text
+Current research topic
+Important findings
+Unresolved questions
+Research context
+```
+
+---
+
+## Conversation Compaction
+
+The graph does not keep an unlimited transcript.
+
+Instead:
+
+```text
+Recent messages
+      ↓
+Keep recent window
+      ↓
+Older messages
+      ↓
+Summarize
+      ↓
+message_summary
+```
+
+This keeps the graph state smaller while preserving useful context.
+
+The current design keeps a maximum recent conversation window and summarizes older turns.
+
+---
+
+## Session Isolation
+
+Each Streamlit research session receives its own:
+
+```text
+session_id
+```
+
+The session ID is used to isolate:
+
+* memory
+* document storage
+* Chroma storage
+* research state
+
+This prevents information from one session from unintentionally appearing in another.
+
+The Streamlit application creates a new session ID when starting a new session and clears the old in-memory session memory.
+
+---
+
+# 11. Streamlit Application
+
+The user-facing application is:
+
+```text
+app.py
+```
+
+The application provides:
+
+* research chat interface
+* session management
+* document upload
+* document indexing progress
+* research progress
+* assistant responses
+* clarification interaction
+
+The application initializes:
+
+```text
+Session ID
+    ↓
+Session Memory
+    ↓
+Document Handler
+    ↓
+HybridRAG
+    ↓
+ResearchGraph
+```
+
+When a question is submitted:
+
+```text
+Streamlit
+    ↓
+ResearchGraph.invoke()
+    ↓
+Research Graph
+    ↓
+Final Response
+    ↓
+Streamlit
+```
+
+The current application constructs the `ResearchGraph` with the session's RAG engine, document handler, memory, and session ID.
+
+---
+
+# 12. Project Structure
+
+The repository is organized around the agent core, supporting components, and RAG subsystem.
+
+```text
+research_agent/
+│
+├── app.py
+│
+├── requirements.txt
+├── .env.example
+├── README.md
+│
+├── research_agent/
+│   │
+│   ├── __init__.py
+│   ├── config.py
+│   ├── graph.py
+│   ├── nodes.py
+│   ├── state.py
+│   ├── tools.py
+│   ├── llm.py
+│   ├── memory.py
+│   ├── prompts.py
+│   ├── parsers.py
+│   ├── node_helpers.py
+│   └── utils.py
+│
+│   └── rag_system/
+│       │
+│       ├── __init__.py
+│       ├── rag_engine.py
+│       ├── data_types.py
+│       ├── dense_retriever.py
+│       ├── lexical_retriever.py
+│       ├── rrf_ranker.py
+│       ├── cross_encoder_ranker.py
+│       ├── overall_ranker.py
+│       │
+│       └── document_handler/
+│           ├── __init__.py
+│           ├── document_handler.py
+│           └── pdf_handler.py
+│
+├── tests/
+│
+├── documents/
+│
+├── .chroma/
+│
+└── session_memory_snapshots/
+```
+
+> The exact repository can contain additional test/benchmark/helper files; the structure above focuses on the core runtime architecture.
+
+---
+
+# 13. Important Files
+
+| File                      | Responsibility                            |
+| ------------------------- | ----------------------------------------- |
+| `app.py`                  | Streamlit user interface                  |
+| `graph.py`                | Builds and runs the research graph        |
+| `nodes.py`                | Implements research graph node logic      |
+| `state.py`                | Defines graph state                       |
+| `tools.py`                | Defines research tools                    |
+| `llm.py`                  | LLM construction/invocation               |
+| `memory.py`               | Session memory                            |
+| `prompts.py`              | System/task prompts                       |
+| `parsers.py`              | Structured LLM output parsing             |
+| `node_helpers.py`         | Shared research/drafting/citation helpers |
+| `config.py`               | Environment-based configuration           |
+| `utils.py`                | Logging/retry/helper utilities            |
+| `rag_engine.py`           | RAG orchestration                         |
+| `dense_retriever.py`      | Embedding/vector retrieval                |
+| `lexical_retriever.py`    | BM25 retrieval                            |
+| `rrf_ranker.py`           | Dense + lexical fusion                    |
+| `cross_encoder_ranker.py` | Candidate reranking                       |
+| `overall_ranker.py`       | Final result ranking                      |
+| `data_types.py`           | RAG result data models                    |
+| `document_handler.py`     | Document loading/chunking                 |
+| `pdf_handler.py`          | PDF-specific processing                   |
+
+---
+
+# 14. Technology Stack
+
+## Core
+
+* Python
+* LangGraph
+* LangChain
+* Pydantic
+* Streamlit
+
+## LLM
+
+* Hugging Face / configured LLM provider
+
+The default configuration includes a Hugging Face model configuration and supports multiple Hugging Face token slots for authentication/rate-limit rotation.
+
+## Research Tools
+
+* DuckDuckGo Search
+* Wikipedia
+* arXiv
+
+## RAG
+
+* Hugging Face embeddings
+* Chroma
+* BM25
+* Sentence Transformers Cross Encoder
+
+## Document Processing
+
+* PyPDF
+* PyMuPDF / `pymupdf4llm`
+* LangChain document loaders
+* python-pptx
+* DOCX/text/structured-file loaders as configured
+
+---
+
+# 15. Installation
+
+## 15.1 Clone the Repository
+
+```bash
+git clone https://github.com/anirban2005143a/research_agent.git
+
+cd research_agent
+```
+
+---
+
+## 15.2 Create a Virtual Environment
+
+### Windows
+
+```bash
+python -m venv .venv
+
+.venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+python3 -m venv .venv
+
+source .venv/bin/activate
+```
+
+---
+
+## 15.3 Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+The repository maintains its Python dependencies in `requirements.txt`.
+
+---
+
+# 16. Environment Configuration
+
+Create:
+
+```text
+.env
+```
+
+from:
+
+```text
+.env.example
+```
+
+The configuration is loaded by `research_agent/config.py`.
+
+Example:
+
+```env
+LLM_MODEL_ID=meta-llama/Llama-3.1-8B-Instruct
+
+EMBEDDING_MODEL_ID=BAAI/bge-m3
+
+EMBEDDING_CACHE_DIR=.models
+
+DOCUMENTS_DIR=documents
+
+CHROMA_DIR=.chroma
+
+RAG_CHUNK_SIZE=900
+
+RAG_CHUNK_OVERLAP=140
+
+RAG_TOP_K=8
+
+RAG_EMBEDDING_BATCH_SIZE=16
+
+CROSS_ENCODER_ENABLED=true
+
+CROSS_ENCODER_BATCH_SIZE=8
+
+MAX_RETRIES=3
+
+RETRY_DELAY_SECONDS=1
+```
+
+---
+
+## Hugging Face Authentication
+
+The project supports multiple token variables:
+
+```env
+HUGGINGFACEHUB_API_TOKEN1=...
+HUGGINGFACEHUB_API_TOKEN2=...
+HUGGINGFACEHUB_API_TOKEN3=...
+HUGGINGFACEHUB_API_TOKEN4=...
+HUGGINGFACEHUB_API_TOKEN5=...
+```
+
+Only configured tokens are used.
+
+**Never commit real API tokens to GitHub.**
+
+The configuration code explicitly reads the numbered token slots and removes empty/default placeholder values.
+
+---
+
+# 17. Running the Application
+
+From the project root:
+
+```bash
+streamlit run app.py
+```
+
+The Streamlit interface will provide:
+
+```text
+Research Agent
+│
+├── Research workspace
+├── Session ID
+├── Document upload
+└── Research chat
+```
+
+---
+
+# 18. Using Document RAG
+
+## Step 1 — Start the application
+
+```bash
+streamlit run app.py
+```
+
+---
+
+## Step 2 — Upload documents
+
+Use:
+
+```text
+Upload source documents
+```
+
+The application accepts multiple files.
+
+---
+
+## Step 3 — Wait for indexing
+
+The application processes each document:
+
+```text
+Save
+ ↓
+Parse
+ ↓
+Chunk
+ ↓
+Embed
+ ↓
+Store
+ ↓
+BM25 rebuild
+```
+
+The UI displays indexing progress.
+
+---
+
+## Step 4 — Ask a question
+
+For example:
+
+```text
+What are the main limitations discussed in the uploaded paper?
+```
+
+The agent can decide to use:
+
+```text
+rag_search
+```
+
+---
+
+## Step 5 — RAG returns evidence
+
+```text
+Question
+   ↓
+rag_search
+   ↓
+HybridRAG
+   ↓
+Dense + BM25
+   ↓
+RRF
+   ↓
+Cross Encoder
+   ↓
+Final Ranking
+   ↓
+Relevant Chunks
+```
+
+---
+
+## Step 6 — Agent uses the evidence
+
+The returned chunks become part of the agent's research evidence.
+
+```text
+RAG Evidence
+      +
+Web Evidence
+      +
+arXiv Evidence
+      +
+Wikipedia Evidence
+      ↓
+Collected Research
+```
+
+The agent can therefore combine local document evidence with external research.
+
+---
+
+# 19. Example Research Flow
+
+Suppose the user asks:
+
+```text
+"Compare the approach described in my uploaded paper with recent RAG techniques."
+```
+
+The complete process can look like:
+
+```mermaid
+flowchart TD
+
+    Q["User Query"]
+
+    SCOPE["Scope Check"]
+
+    CLARIFY["Clarification"]
+
+    PLAN["Research Plan"]
+
+    T1["Task 1<br/>Understand Uploaded Paper"]
+
+    T2["Task 2<br/>Find Recent RAG Techniques"]
+
+    T3["Task 3<br/>Compare Approaches"]
+
+    RAG["RAG Search"]
+
+    WEB["Web Search"]
+
+    ARXIV["arXiv Search"]
+
+    COLLECT["Collect Evidence"]
+
+    DRAFT["Draft Response"]
+
+    EVAL["Evaluate"]
+
+    FINAL["Final Answer"]
+
+
+    Q --> SCOPE
+    SCOPE --> CLARIFY
+    CLARIFY --> PLAN
+
+    PLAN --> T1
+    T1 --> RAG
+
+    RAG --> T2
+    T2 --> WEB
+    T2 --> ARXIV
+
+    WEB --> T3
+    ARXIV --> T3
+    RAG --> T3
+
+    T3 --> COLLECT
+    COLLECT --> DRAFT
+    DRAFT --> EVAL
+
+    EVAL -->|Needs more evidence| PLAN
+    EVAL -->|Accepted| FINAL
+```
+
+This illustrates the important concept:
+
+> The agent controls the research process, while RAG is only one research capability.
+
+---
+
+# 20. Data Flow
+
+There are two major data flows in the system.
+
+---
+
+## 20.1 Research Query Flow
+
+```text
+User Question
+      ↓
+Streamlit
+      ↓
+ResearchGraph
+      ↓
+State Preparation
+      ↓
+Scope Check
+      ↓
+Clarification
+      ↓
+Planning
+      ↓
+Research Task
+      ↓
+Tool Selection
+      ↓
+Tool Execution
+      ↓
+Evidence
+      ↓
+Collection
+      ↓
+Draft
+      ↓
+Evaluation
+      ↓
+Finalization
+      ↓
+User
+```
+
+---
+
+## 20.2 Document Flow
+
+```text
+Uploaded Document
+      ↓
+Document Handler
+      ↓
+Text Extraction
+      ↓
+Cleaning
+      ↓
+Metadata
+      ↓
+Chunking
+      ↓
+Embeddings
+      ↓
+Chroma
+
+             +
+             
+BM25 Index
+```
+
+Then during retrieval:
+
+```text
+Research Task
+      ↓
+RAG Tool
+      ↓
+HybridRAG
+      │
+      ├──────────────→ Dense Retrieval
+      │
+      └──────────────→ BM25 Retrieval
+                            │
+                            ↓
+                     RRF Fusion
+                            ↓
+                    Cross Encoder
+                            ↓
+                    Final Ranking
+                            ↓
+                     Top-K Chunks
+                            ↓
+                       RAG Tool
+                            ↓
+                    Research Agent
+```
+
+---
+
+# 21. Error Handling and Reliability
+
+The project contains retry mechanisms around external/tool operations.
+
+For example:
+
+```text
+Tool Call
+   ↓
+Attempt
+   ↓
+Failure?
+ ┌─┴─┐
+No  Yes
+│    │
+↓    ↓
+Done Retry
+      │
+      └──→ Retry limit
+```
+
+The configuration provides:
+
+```env
+MAX_RETRIES=3
+RETRY_DELAY_SECONDS=1
+```
+
+The tool layer uses retry handling around operations such as web search, RAG retrieval, file operations, Wikipedia, and arXiv.
+
+---
+
+# 22. Logging
+
+The project contains logging/progress markers for important operations.
+
+Typical RAG stages include:
+
+```text
+[RAG][DOCUMENT]
+[RAG][CHUNKING]
+[RAG][EMBEDDING]
+[RAG][VECTOR STORE]
+[RAG][BM25]
+[RAG][QUERY]
+[RAG][RETRIEVAL]
+[RAG][RRF]
+[RAG][CROSS ENCODER]
+[RAG][FINAL RANKING]
+```
+
+These make it easier to understand what the RAG system is doing internally.
+
+---
+
+# 23. Design Principles
+
+## 23.1 Agent First
+
+The Research Agent is the central system.
+
+RAG is a tool.
+
+```text
+                 Research Agent
+                       │
+          ┌────────────┼────────────┐
+          ↓            ↓            ↓
+        Web           RAG         arXiv
+        Tool          Tool         Tool
+```
+
+---
+
+## 23.2 Tool Specialization
+
+Each tool has a specific purpose.
+
+```text
+Web Search     → External/current information
+
+RAG            → Uploaded documents
+
+Wikipedia      → Background/definitions
+
+arXiv          → Academic research
+
+File Reader    → Inspect a known document
+```
+
+This avoids treating every information source as the same.
+
+---
+
+## 23.3 Structured Agent State
+
+The workflow is represented using structured graph state rather than passing arbitrary strings between every component.
+
+Important state information includes:
+
+```text
+query
+tasks
+current_task_index
+tool_responses
+citations
+draft_response
+evaluation
+final_response
+```
+
+This makes the research process explicit and inspectable.
+
+---
+
+## 23.4 Bounded Iteration
+
+The evaluation loop is bounded.
+
+```text
+Research
+   ↓
+Draft
+   ↓
+Evaluate
+   ↓
+Improve
+   ↓
+Research again
+```
+
+but it cannot continue forever.
+
+---
+
+## 23.5 Session Isolation
+
+Research sessions maintain separate:
+
+* session memory
+* documents
+* vector storage
+
+This prevents unrelated sessions from sharing research context.
+
+---
+
+# 24. Limitations and Notes
+
+## External Search Dependency
+
+Web, Wikipedia, and arXiv tools depend on external services.
+
+Failures can occur because of:
+
+* network issues
+* service availability
+* rate limits
+* empty search results
+
+---
+
+## Model Dependency
+
+The quality of:
+
+* planning
+* tool selection
+* clarification
+* drafting
+* evaluation
+
+depends heavily on the configured LLM.
+
+---
+
+## RAG Dependency
+
+RAG quality depends on:
+
+* document quality
+* text extraction
+* chunking
+* embedding quality
+* BM25 retrieval
+* reranking
+* metadata quality
+
+---
+
+## Scanned PDFs
+
+PDFs containing scanned images may require OCR.
+
+The current PDF processing path does not automatically enable OCR in the markdown conversion path.
+
+---
+
+## Large Documents
+
+Very large document collections may require additional:
+
+* storage management
+* batching
+* concurrency control
+* memory optimization
+* retrieval optimization
+
+---
+
+# 25. Future Improvements
+
+Possible future improvements include:
+
+### 🔍 Better Source Verification
+
+Add stronger source-quality and evidence verification.
+
+### 🧠 Better Planning
+
+Allow the planner to dynamically adjust the number and type of research tasks.
+
+### 📊 Research Metrics
+
+Track:
+
+* tool latency
+* retrieval latency
+* number of sources
+* retrieval quality
+* iteration count
+* token usage
+* failed tool calls
+
+### 🗂️ Better Document Management
+
+Add:
+
+* document deletion
+* document metadata management
+* document preview
+* source filtering
+* document collections
+
+### 🔎 Better RAG Evaluation
+
+Evaluate:
+
+* retrieval precision
+* recall
+* MRR
+* NDCG
+* answer faithfulness
+* citation correctness
+
+### 🌐 More Research Sources
+
+Potential future tools:
+
+* Google Scholar
+* Semantic Scholar
+* PubMed
+* official documentation search
+* specialized domain databases
+
+---
+
+# 26. License
+
+See the repository license file for licensing information.
+
+---
+
+# 🧠 Quick Mental Model
+
+If you are new to the project, remember the system using this simple hierarchy:
+
+```text
+                         ┌──────────────────────┐
+                         │    RESEARCH AGENT    │
+                         │                      │
+                         │  Understands problem │
+                         │  Plans research      │
+                         │  Chooses tools       │
+                         │  Collects evidence   │
+                         │  Evaluates answer    │
+                         └──────────┬───────────┘
+                                    │
+                    ┌───────────────┼────────────────┐
+                    │               │                │
+                    ▼               ▼                ▼
+                Web Tool        RAG Tool         arXiv Tool
+                                    │
+                                    ▼
+                             ┌──────────────┐
+                             │ Hybrid RAG   │
+                             └──────┬───────┘
+                                    │
+                     ┌──────────────┼──────────────┐
+                     │              │              │
+                     ▼              ▼              ▼
+                  Chroma          BM25        Cross Encoder
+                     │              │              │
+                     └──────────────┼──────────────┘
+                                    ▼
+                              Ranked Evidence
+                                    │
+                                    ▼
+                             Research Agent
+                                    │
+                                    ▼
+                              Final Answer
+```
+
+### In short:
+
+```text
+User
+ ↓
+Research Agent
+ ↓
+Plan
+ ↓
+Choose Tools
+ ↓
+Gather Evidence
+ ↓
+Evaluate
+ ↓
+Improve if needed
+ ↓
+Final Answer
+```
+
+And when local documents are needed:
+
+```text
+Research Agent
+      ↓
+   RAG Tool
+      ↓
+HybridRAG
+      ↓
+Dense + BM25
+      ↓
+RRF
+      ↓
+Cross Encoder
+      ↓
+Final Ranking
+      ↓
+Evidence
+      ↓
+Research Agent
+```
+
+> **The agent is the brain of the system. RAG is one of its research tools.**
