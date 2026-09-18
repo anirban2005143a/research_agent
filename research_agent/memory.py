@@ -65,12 +65,22 @@ class ShortTermMemory:
             return
         extracted_user_info: list[str] = []
         name_match = re.search(
-            r"\bmy name is\s+([A-Za-z][A-Za-z .'-]{1,80}?)(?:[.!?,]|$)",
+            r"\bmy name is\s+([A-Za-z][A-Za-z .'-]{1,80}?)(?:[.!?,]|$)"
+            r"|\bi am\s+([A-Za-z][A-Za-z .'-]{1,80}?)(?:[.!?,]|$)"
+            r"|\bi'm\s+([A-Za-z][A-Za-z .'-]{1,80}?)(?:[.!?,]|$)",
             query,
             re.IGNORECASE,
         )
         if name_match:
-            name = " ".join(name_match.group(1).split()).strip(" .,'\"")
+            name = next(
+                (
+                    group
+                    for group in name_match.groups()
+                    if group
+                ),
+                "",
+            )
+            name = " ".join(name.split()).strip(" .,'\"")
             if name:
                 extracted_user_info.append(f"User name: {name}")
         if not llm:

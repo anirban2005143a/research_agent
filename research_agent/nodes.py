@@ -70,11 +70,14 @@ class ResearchNodes:
     def out_of_scope_response(self, state):
         """Explain the research scope and guide an unrelated request toward a research question."""
         memory = self.session_memory.context()
+        recent_conversation = format_recent_messages(state.get("messages", []))
         input_message = OUT_OF_SCOPE_INPUT_TEMPLATE.format(
             query=state.get("query", ""),
         ) + (
             f"\n\nRemembered user information: {memory.get('user_info', [])}"
             f"\nRemembered session context: {memory.get('session_context', [])}"
+            f"\n\nOlder summarized context: {state.get('message_summary', '') or 'None'}"
+            f"\n\nRecent conversation: {recent_conversation}"
         )
         response = invoke_llm(
             self.llm,
@@ -96,9 +99,7 @@ class ResearchNodes:
         parser = llm_response_fixing_parser(ClarificationDecision, self.llm)
         query = state.get("query", "")
         hitl_answer = str(state.get("hitl_answer", "")).strip()
-        conversation = format_recent_messages(
-            self.session_memory.context().get("recent_messages", [])
-        )
+        conversation = format_recent_messages(state.get("messages", []))
         if hitl_answer:
             input_message = CLARIFY_QUERY_INPUT_TEMPLATE.format(
                 query=query, clarification_answer=hitl_answer
@@ -164,12 +165,20 @@ class ResearchNodes:
         if answer_text:
             return {"hitl_answer": answer_text, "needs_hitl": False}
 
+        memory = self.session_memory.context()
+        unclear_input = (
+            UNCLEAR_QUERY_INPUT_TEMPLATE.format(query=query)
+            + f"\n\nUser information: {memory.get('user_info', [])}"
+            + f"\nSession context: {memory.get('session_context', [])}"
+            + f"\nOlder summarized context: {state.get('message_summary', '') or 'None'}"
+            + f"\nRecent conversation: {conversation}"
+        )
         response = invoke_llm(
             self.llm,
             "unclear_query_response_llm",
             [
                 SystemMessage(content=UNCLEAR_QUERY_RESPONSE_SYSTEM_PROMPT),
-                HumanMessage(content=UNCLEAR_QUERY_INPUT_TEMPLATE.format(query=query)),
+                HumanMessage(content=unclear_input),
             ],
         )
         return {
@@ -382,20 +391,25 @@ class ResearchNodes:
             else getattr(last_message, "content", "")
         )
         if query and state_messages and last_content != query:
-            state_messages = self._append_recent_state_message(
+            compacted_state = self._append_recent_state_message(
                 {
                     "messages": state_messages,
                     "message_summary": state.get("message_summary", ""),
                 },
                 {"role": "user", "content": query},
-            )["messages"]
+            )
+            state_messages = compacted_state["messages"]
+            message_summary = compacted_state.get("message_summary", "")
         elif query and not state_messages:
             state_messages = [{"role": "user", "content": query}]
+            message_summary = state.get("message_summary", "")
+        else:
+            message_summary = state.get("message_summary", "")
 
         return {
             "query": query,
             "messages": state_messages,
-            "message_summary": state.get("message_summary", ""),
+            "message_summary": message_summary,
             "scope_category": "",
             "tasks": [],
             "current_task_index": 0,
