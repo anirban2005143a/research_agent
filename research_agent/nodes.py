@@ -18,6 +18,7 @@ from .prompts import (
     CONVERSATION_CONTEXT_TEMPLATE,
     EVALUATE_RESPONSE_SYSTEM_PROMPT,
     HITL_CLARIFICATION_QUESTION,
+    MESSAGE_SUMMARY_SYSTEM_PROMPT,
     OUT_OF_SCOPE_INPUT_TEMPLATE,
     OUT_OF_SCOPE_RESPONSE_SYSTEM_PROMPT,
     PLANNING_INPUT_TEMPLATE,
@@ -68,8 +69,12 @@ class ResearchNodes:
     @log_function
     def out_of_scope_response(self, state):
         """Explain the research scope and guide an unrelated request toward a research question."""
+        memory = self.session_memory.context()
         input_message = OUT_OF_SCOPE_INPUT_TEMPLATE.format(
             query=state.get("query", ""),
+        ) + (
+            f"\n\nRemembered user information: {memory.get('user_info', [])}"
+            f"\nRemembered session context: {memory.get('session_context', [])}"
         )
         response = invoke_llm(
             self.llm,
@@ -334,15 +339,30 @@ class ResearchNodes:
         removed = current_messages[:-5]
         remaining = current_messages[-5:]
         summary = state.get("message_summary", "").strip()
-        removal_text = "\n".join(
-            f"{entry.get('role', 'message')}: {entry.get('content', '')}"
-            for entry in removed
-            if entry.get("content")
-        )
+        removal_text = format_recent_messages(removed)
+        if removal_text == "No previous conversation is available.":
+            removal_text = ""
         if removal_text:
-            summary = "\n".join(
-                part for part in [summary, removal_text] if part
-            ).strip()
+            summary_input = (
+                f"Existing older summary:\n{summary or 'None'}\n\n"
+                f"Removed conversation turns:\n{removal_text}"
+            )
+            try:
+                summary = str(
+                    invoke_llm(
+                        self.llm,
+                        "message_summary_llm",
+                        [
+                            SystemMessage(content=MESSAGE_SUMMARY_SYSTEM_PROMPT),
+                            HumanMessage(content=summary_input),
+                        ],
+                    ).content
+                ).strip()
+            except Exception as exc:
+                log(f"graph.message_summary.fallback | error={exc!r}")
+                summary = "\n".join(
+                    part for part in [summary, removal_text] if part
+                ).strip()
 
         return {
             **state,
@@ -355,7 +375,13 @@ class ResearchNodes:
         """Load the session conversation and clear transient graph data before a new run."""
         query = state.get("query", "")
         state_messages = list(state.get("messages", []))
-        if query and state_messages and state_messages[-1].get("content") != query:
+        last_message = state_messages[-1] if state_messages else None
+        last_content = (
+            last_message.get("content", "")
+            if isinstance(last_message, dict)
+            else getattr(last_message, "content", "")
+        )
+        if query and state_messages and last_content != query:
             state_messages = self._append_recent_state_message(
                 {
                     "messages": state_messages,

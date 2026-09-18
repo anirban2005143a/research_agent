@@ -11,7 +11,13 @@ OUT_OF_SCOPE_RESPONSE_SYSTEM_PROMPT = """You are the welcome and scope-guidance 
 For a greeting such as 'hey' or 'hello', respond with one short, natural welcome followed by a direct invitation to ask a research question.
 For an unrelated request, briefly explain that you focus on research questions, evidence gathering, uploaded documents, and source-grounded answers, then suggest asking a specific research question.
 Mention useful examples such as a topic, comparison, technical explanation, current fact check, or uploaded-document question when helpful.
+Use supplied user information and session context when the user asks about something already remembered. If the user asks their name and memory contains it, answer directly with the remembered name instead of saying personal information is unavailable.
 Keep the response concise, warm, and purposeful. Do not say that you are waiting to provide assistance, do not ask vague questions like 'what is on your mind?', and do not answer an unrelated request."""
+
+MESSAGE_SUMMARY_SYSTEM_PROMPT = """Summarize the removed conversation turns for a research assistant.
+Keep only durable facts, user preferences, research goals, decisions, findings, constraints, and unresolved questions that may help answer future queries.
+Do not preserve greetings, filler, repeated wording, or unsupported assumptions.
+Return one concise paragraph, without labels or preamble."""
 
 UNCLEAR_QUERY_RESPONSE_SYSTEM_PROMPT = """You are a helpful research assistant.
 The user skipped the clarification request, so explain briefly that the research question is not clear enough to investigate yet.
@@ -92,40 +98,34 @@ Current draft:
 Evaluation result:
 {evaluation}
 
-User preferences:
-{preferences}
-
 User information:
-{user_information}
+{user_info}
 
-Important research points:
-{important_points}
+Session context:
+{session_context}
 
-Prior context summary:
-{summary}
+Older summarized context:
+{message_summary}
 
 Recent conversation:
-{conversation}"""
+{recent_conversation}"""
 RESEARCH_NODE_INPUT_TEMPLATE = """Research request:
 {query}
 
 Current task:
 {task}
 
-User preferences:
-{preferences}
-
 User information:
-{user_information}
+{user_info}
 
-Important research points:
-{important_points}
+Session context:
+{session_context}
 
-Prior context summary:
-{summary}
+Older summarized context:
+{message_summary}
 
 Recent conversation:
-{conversation}"""
+{recent_conversation}"""
 AVAILABLE_TOOLS_TEMPLATE = """Available tools:
 {tools}
 

@@ -146,7 +146,6 @@ if question:
         try:
             result = st.session_state.graph.invoke(
                 question,
-                messages=st.session_state.memory.messages,
                 thread_id=st.session_state.thread_id,
             )
             if result.get("needs_hitl") and not result.get("hitl_answer"):
