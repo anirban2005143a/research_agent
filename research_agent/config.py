@@ -8,22 +8,14 @@ load_dotenv()
 
 def _configured_hf_tokens() -> tuple[str, ...]:
     values = [
-        os.getenv("HUGGINGFACEHUB_API_TOKEN", "").strip(),
-        *[
-            value
-            for index in range(1, 6)
-            for value in (
-                os.getenv(f"HUGGINGFACEHUB_API_TOKEN{index}", "").strip(),
-                os.getenv(f"HF_TOKEN{index}", "").strip(),
-            )
-        ],
+        os.getenv(f"HUGGINGFACEHUB_API_TOKEN{index}", "").strip()
+        for index in range(1, 6)
     ]
     return tuple(dict.fromkeys(value for value in values if value and not value.startswith("your_")))
 
 
 @dataclass(frozen=True)
 class Settings:
-    hf_token: str = os.getenv("HUGGINGFACEHUB_API_TOKEN", "").strip()
     hf_tokens: tuple[str, ...] = _configured_hf_tokens()
     llm_model_id: str = os.getenv("LLM_MODEL_ID", "meta-llama/Llama-3.1-8B-Instruct")
     embedding_model_id: str = os.getenv("EMBEDDING_MODEL_ID", "BAAI/bge-m3")

@@ -14,7 +14,7 @@ class LLMModule(Runnable):
     def __init__(self, tokens: tuple[str, ...] | None = None, tools=None, **bind_kwargs):
         self.tokens = tokens if tokens is not None else settings.hf_tokens
         if not self.tokens:
-            raise RuntimeError("Configure HUGGINGFACEHUB_API_TOKEN or HF_TOKEN1..HF_TOKEN5 in .env.")
+            raise RuntimeError("Configure HUGGINGFACEHUB_API_TOKEN1..HUGGINGFACEHUB_API_TOKEN5 in .env.")
         self.tools = tools
         self.bind_kwargs = bind_kwargs
         self._index = 0
@@ -58,8 +58,6 @@ class LLMModule(Runnable):
 
 def build_llm():
     configured_tokens = getattr(settings, "hf_tokens", ())
-    fallback_token = getattr(settings, "hf_token", "")
-    tokens = configured_tokens or ((fallback_token,) if fallback_token and not fallback_token.startswith("your_") else ())
-    if not tokens:
-        raise RuntimeError("Configure HUGGINGFACEHUB_API_TOKEN or HF_TOKEN1..HF_TOKEN5 in .env.")
-    return LLMModule(tokens)
+    if not configured_tokens:
+        raise RuntimeError("Configure HUGGINGFACEHUB_API_TOKEN1..HUGGINGFACEHUB_API_TOKEN5 in .env.")
+    return LLMModule(configured_tokens)

@@ -259,12 +259,16 @@ Settings are loaded from `.env` by `research_agent/config.py`.
 | `RAG_EMBEDDING_BATCH_SIZE` | `16` | Embedding batch size |
 | `RAG_TOP_K` | `8` | Default final result count |
 | `RAG_CANDIDATE_MULTIPLIER` | `6` | Candidate expansion factor |
-| `HUGGINGFACEHUB_API_TOKEN` | empty | Hugging Face authentication/rate limits |
+| `HUGGINGFACEHUB_API_TOKEN1` ... `HUGGINGFACEHUB_API_TOKEN5` | empty | Hugging Face authentication and rate-limit rotation |
 | `HF_PROVIDER` | `auto` | Hugging Face provider |
 | `RAG_DENSE_WEIGHT` | `0.35` | Dense retrieval contribution |
 | `RAG_BM25_WEIGHT` | `0.25` | BM25 retrieval contribution |
 | `RAG_CROSS_ENCODER_WEIGHT` | `0.40` | Cross-encoder contribution |
 | `MAX_RESEARCH_ITERATIONS` | `2` | Maximum critique iterations |
+
+### Hugging Face Token Rotation
+
+The application reads the numbered variables `HUGGINGFACEHUB_API_TOKEN1` through `HUGGINGFACEHUB_API_TOKEN5` and cycles through the configured tokens when creating LLM clients. If you add or remove token slots, update both the corresponding variables in `.env` and the supported range in `_configured_hf_tokens()` in [research_agent/config.py](research_agent/config.py). Keep `.env` and `.env.example` aligned by variable name, and never commit real token values.
 
 ## Running The RAG Pipeline
 
