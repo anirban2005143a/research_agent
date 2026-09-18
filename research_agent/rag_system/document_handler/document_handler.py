@@ -9,6 +9,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pptx import Presentation
 
 from ...config import settings
+from ...utils import log
 
 SUPPORTED_EXTENSIONS = {".pdf", ".md", ".ppt", ".pptx", ".docx", ".txt"}
 
@@ -26,8 +27,12 @@ class DocumentHandler:
 
     supported_extensions = SUPPORTED_EXTENSIONS
 
-    def __init__(self, storage_directory: str | Path):
+    def __init__(self, storage_directory: str | Path | None = None):
         """Create the session storage directory used for uploaded files."""
+        if storage_directory is None:
+            raise ValueError("storage_directory is required.")
+        if not str(storage_directory).strip():
+            raise ValueError("storage_directory cannot be empty.")
         self.storage_dir = Path(storage_directory)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
 
@@ -40,10 +45,10 @@ class DocumentHandler:
         destination = self.storage_dir / original_path.name
         if destination.exists():
             destination.unlink()
-            print(f"[RAG][FILES] Replaced existing file: {destination.name}")
+            log(f"rag.files.replaced | source={destination.name}")
 
         destination.write_bytes(file_contents)
-        print(f"[RAG][FILES] Saved: {destination.name}")
+        log(f"rag.files.saved | source={destination.name}")
         return destination
 
     def remove_file(self, stored_file_path: str | Path) -> bool:
@@ -54,12 +59,20 @@ class DocumentHandler:
             return False
 
         destination.unlink()
-        print(f"[RAG][FILES] Removed: {destination.name}")
+        log(f"rag.files.removed | source={destination.name}")
         return True
 
     def file_exists(self, stored_file_path: str | Path) -> bool:
         """Return True when a file with the same basename exists in the session storage folder."""
         return (self.storage_dir / Path(stored_file_path).name).exists()
+
+    def list_files(self) -> list[str]:
+        """Return the names of files stored in the session directory."""
+        return [
+            path.name
+            for path in sorted(self.storage_dir.iterdir())
+            if path.is_file()
+        ]
 
     def _get_document_handler(self, document_path: str | Path):
         """Return the PDF-specific handler for PDF files and the base handler for other supported types."""
@@ -115,13 +128,13 @@ class DocumentHandler:
         for chunk in chunks:
             chunk.page_content = _clean_text(chunk.page_content)
 
-        print(f"[RAG][CHUNKING] Created {len(chunks)} chunks from {source_name}")
+        log(f"rag.chunking.completed | source={source_name} | chunk_count={len(chunks)}")
         return [chunk for chunk in chunks if chunk.page_content]
 
     def prepare_document(self, document_path: Path) -> list[Document]:
         """Load one document, clean its content, and prepare chunked output for indexing."""
         source_name = document_path.name
-        print(f"[RAG][DOCUMENT] Reading: {source_name}")
+        log(f"rag.document.reading | source={source_name}")
 
         source_documents = self.load_document(document_path)
         prepared_documents: list[Document] = []

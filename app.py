@@ -1,4 +1,3 @@
-from datetime import datetime
 import hashlib
 import uuid
 from pathlib import Path
@@ -20,7 +19,6 @@ if "session_id" not in st.session_state:
 if "rag" not in st.session_state:
     st.session_state.document_handler = DocumentHandler(
         Path("documents") / st.session_state.session_id,
-        session_id=st.session_state.session_id,
     )
     st.session_state.rag = HybridRAG(
         session_id=st.session_state.session_id,
@@ -45,7 +43,6 @@ with st.sidebar:
         st.session_state.memory = ShortTermMemory(recent_limit=5)
         st.session_state.document_handler = DocumentHandler(
             Path("documents") / st.session_state.session_id,
-            session_id=st.session_state.session_id,
         )
         st.session_state.rag = HybridRAG(
             session_id=st.session_state.session_id,
@@ -89,11 +86,6 @@ with st.sidebar:
                     )
                     indexed_chunks += st.session_state.rag.store_document(
                         stored_path,
-                        file_metadata={
-                            "mime_type": uploaded.type,
-                            "file_size_bytes": uploaded.size,
-                            "uploaded_at": str(datetime.now()),
-                        },
                         progress_callback=show_chunk_progress,
                     )
                     st.session_state.indexed_uploads.add(upload_key)
@@ -114,8 +106,8 @@ with st.sidebar:
     stored_files = st.session_state.document_handler.list_files()
     if stored_files:
         st.caption("Stored files")
-        for item in stored_files:
-            st.write(f"- {item['source']} ({item['chunk_count']} chunks)")
+        for file_name in stored_files:
+            st.write(f"- {file_name}")
 
 for message in st.session_state.memory.messages:
     with st.chat_message(message["role"]):

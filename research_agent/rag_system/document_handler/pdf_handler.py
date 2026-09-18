@@ -11,6 +11,7 @@ from langchain_text_splitters import (
 from pypdf import PdfReader
 
 from .document_handler import DocumentHandler
+from ...utils import log
 
 
 class PDFDocumentHandler(DocumentHandler):
@@ -93,7 +94,7 @@ class PDFDocumentHandler(DocumentHandler):
         and recursively split only sections exceeding max_chars.
         """
 
-        print(f"[RAG][DOCUMENT] Reading: {path.name}")
+        log(f"rag.document.reading | source={path.name}")
 
         # ---------------------------------------------------------
         # 1. PDF metadata

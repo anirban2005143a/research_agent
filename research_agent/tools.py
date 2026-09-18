@@ -1,15 +1,14 @@
-import time
 from typing import Any
 
-from ddgs import DDGS
-from langchain_community.tools import ArxivQueryRun, WikipediaQueryRun
+from langchain_community.tools import ArxivQueryRun, DuckDuckGoSearchRun, WikipediaQueryRun
 from langchain_community.utilities import ArxivAPIWrapper, WikipediaAPIWrapper
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 
 from .config import settings
-from .observability import log, retry_call, timed
+from .utils import log, retry_call
 from .rag_system import DocumentHandler, HybridRAG
+from .rag_system.data_types import SearchResults
 
 
 class QueryInput(BaseModel):
@@ -29,18 +28,15 @@ class QualityInput(BaseModel):
 
 
 def _web_search(query: str) -> str:
-    log(f"TOOL web_search | query={query!r}")
-    with timed("web_search"):
-        results = retry_call(lambda: DDGS().text(query, max_results=5), "tool.web_search")
+    log(f"tool.web_search.started | query={query!r}")
+    results = retry_call(lambda: DuckDuckGoSearchRun().invoke(query), "tool.web_search")
     if not results:
         return "No web sources found. The available external knowledge may not cover this query."
-    return "\n\n".join(
-        f"Title: {item.get('title', '')}\nURL: {item.get('href', '')}\nSnippet: {item.get('body', '')}"
-        for item in results
-    )
+    return str(results)
 
 
-def _source_quality_check(source_text: str) -> str:
+def _source_quality_check(source_text: str) -> dict[str, Any]:
+    """Count credibility-related indicators in source text; this is not verification."""
     markers = [
         "doi",
         "journal",
@@ -50,8 +46,15 @@ def _source_quality_check(source_text: str) -> str:
         "arxiv",
         "methods",
     ]
-    hits = sum(marker in source_text.lower() for marker in markers)
-    return f"Quality signal: {hits}/{len(markers)} credibility markers found. Verify primary sources before strong claims."
+    normalized_text = source_text.lower()
+    matched_markers = [marker for marker in markers if marker in normalized_text]
+    return {
+        "marker_count": len(matched_markers),
+        "marker_total": len(markers),
+        "matched_markers": matched_markers,
+        "assessment": "heuristic_only",
+        "message": "Credibility indicators were found; verify the primary source before making strong claims.",
+    }
 
 
 def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | None = None) -> list[Any]:
@@ -64,48 +67,39 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
         return _web_search(query)
 
     @tool("rag_search", args_schema=QueryInput)
-    def rag_search(query: str) -> str:
+    def rag_search(query: str) -> dict[str, Any]:
         """Use when the question likely depends on uploaded or stored local documents. Search the indexed document corpus for matching evidence and return the strongest chunks with citations."""
-        log(f"TOOL rag_search | query={query!r}")
-        started = time.perf_counter()
+        log(f"tool.rag_search.started | query={query!r}")
         matches = retry_call(
             lambda: rag.retrieve(query, k=getattr(settings, "rag_top_k", 8)),
             "tool.rag_search",
         )
-        log(f"TOOL rag_search | matches={len(matches)} | elapsed={time.perf_counter() - started:.2f}s")
-        if not matches:
-            return "No matching uploaded-document evidence was found. State this limitation explicitly."
-        return "\n\n".join(
-            f"Citation: {item['citation']}\nSource: {item['source']}\nScore: {item['score']}\nContent: {item['content']}"
-            for item in matches
-        )
+        result_records = _search_results_to_records(matches)
+        log(f"tool.completed | name=rag_search | matches={len(result_records)}")
+        return {
+            "result_type": "rag_search_results",
+            "results": result_records,
+            "message": "Matching uploaded-document evidence found."
+            if result_records
+            else "No matching uploaded-document evidence was found.",
+        }
 
     @tool("read_stored_file", args_schema=FileInput)
     def read_stored_file(source_name: str, query: str = "") -> str:
         """Use after a file name is known and you need the actual text of a specific uploaded document, usually to verify a claim or inspect a relevant section. Do not use this for vague file discovery."""
-        log(f"TOOL read_stored_file | source={source_name!r} | query={query!r}")
-        with timed("read_stored_file"):
-            return retry_call(lambda: document_handler.read_stored_file(source_name, query=query), "tool.read_stored_file")
+        log(f"tool.read_stored_file.started | source={source_name!r} | query={query!r}")
+        return retry_call(lambda: document_handler.read_stored_file(source_name), "tool.read_stored_file")
 
     @tool("list_stored_files")
-    def list_stored_files() -> str:
-        """Use when you need to discover which local files are available before choosing a document-specific read/search. Returns the stored file names and counts."""
-        log("TOOL list_stored_files")
-        files = document_handler.list_files()
-        return (
-            "\n".join(
-                f"File: {item['source']} | type: {item.get('file_type', 'unknown')} | "
-                f"pages: {item.get('pages', '?')} | chunks: {item['chunk_count']} | "
-                f"metadata: {item.get('mime_type', 'unknown')}"
-                for item in files
-            )
-            or "No documents are currently stored."
-        )
+    def list_stored_files() -> list[str]:
+        """Use when you need to discover which local files are available before choosing a document-specific read/search."""
+        log("tool.list_stored_files.started")
+        return retry_call(document_handler.list_files, "tool.list_stored_files")
 
     @tool("source_quality_check", args_schema=QualityInput)
-    def source_quality_check(source_text: str) -> str:
+    def source_quality_check(source_text: str) -> dict[str, Any]:
         """Use to assess whether a source shows signs of authority (publisher, methods, DOI, institution, etc.). This does not prove correctness; it only flags credibility signals."""
-        log(f"TOOL source_quality_check | chars={len(source_text)}")
+        log(f"tool.source_quality_check.started | character_count={len(source_text)}")
         return _source_quality_check(source_text)
 
     wikipedia_backend = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(top_k_results=3))
@@ -114,16 +108,14 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
     @tool("wikipedia_search", args_schema=QueryInput)
     def wikipedia_search(query: str) -> str:
         """Use for concise background, definitions, historical context, or neutral overview material. Prefer more authoritative sources for technical or disputed claims."""
-        log(f"TOOL wikipedia_search | query={query!r}")
-        with timed("wikipedia_search"):
-            return str(retry_call(lambda: wikipedia_backend.invoke(query), "tool.wikipedia_search"))
+        log(f"tool.wikipedia_search.started | query={query!r}")
+        return str(retry_call(lambda: wikipedia_backend.invoke(query), "tool.wikipedia_search"))
 
     @tool("arxiv_search", args_schema=QueryInput)
     def arxiv_search(query: str) -> str:
         """Use for academic papers, system design details, implementation behavior, algorithms, and technical literature. Best for research questions that require formal or peer-reviewed technical evidence."""
-        log(f"TOOL arxiv_search | query={query!r}")
-        with timed("arxiv_search"):
-            return str(retry_call(lambda: arxiv_backend.invoke(query), "tool.arxiv_search"))
+        log(f"tool.arxiv_search.started | query={query!r}")
+        return str(retry_call(lambda: arxiv_backend.invoke(query), "tool.arxiv_search"))
 
     return [
         web_search,
@@ -134,3 +126,27 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
         arxiv_search,
         source_quality_check,
     ]
+
+
+def _search_results_to_records(search_results: SearchResults) -> list[dict[str, Any]]:
+    """Convert internal Pydantic retrieval results into LangChain-safe JSON records."""
+    records = []
+    for result in search_results.results:
+        metadata = result.document.metadata
+        records.append(
+            {
+                "chunk_id": result.chunk_id,
+                "source": metadata.get("source", "unknown"),
+                "citation": _citation_for(metadata),
+                "content": result.document.page_content,
+                "score": result.final_score,
+                "metadata": metadata,
+            }
+        )
+    return records
+
+
+def _citation_for(metadata: dict[str, Any]) -> str:
+    source = metadata.get("source", "unknown")
+    page = metadata.get("page") or metadata.get("page_number")
+    return f"{source}, page {page}" if page is not None else str(source)

@@ -1,6 +1,7 @@
 """Final score calculation and result selection."""
 
 from .data_types import RetrievedChunk, SearchResults
+from ..utils import log
 
 
 class OverallRanker:
@@ -30,5 +31,5 @@ class OverallRanker:
 
         candidates.sort(key=lambda item: item.final_score, reverse=True)
         selected = candidates[:limit]
-        print(f"[RAG][FINAL RANKING] Selected {len(selected)} results")
+        log(f"rag.final_ranking.completed | selected_count={len(selected)}")
         return SearchResults(results=selected)

@@ -1,62 +1,22 @@
 import json
-import re
-import time
-from functools import wraps
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
-from langgraph.types import Command, interrupt
+from langgraph.types import Command
 
 from .llm import build_llm
-from .parsers import QualityReview, ResearchPlan, ScopeDecision, fixing_parser
-from .prompts.rag import RAG_CONTEXT_LABEL
-from .prompts.research import (
-    CRITIQUE_SYSTEM,
-    DRAFT_SYSTEM,
-    DIRECT_ANSWER_SYSTEM,
-    HITL_QUESTION,
-    PLANNER_SYSTEM,
-    RESEARCH_AGENT_SYSTEM,
-    REVISION_SYSTEM,
-    SCOPE_SYSTEM,
-)
+from .nodes import ResearchNodes
 from .state import ResearchState
 from .tools import build_research_tools
 from .rag_system import DocumentHandler
 from .config import settings
-from .observability import log, retry_call
+from .utils import log
 
 
-def log_node(function):
-    @wraps(function)
-    def wrapped(self, state):
-        started = time.perf_counter()
-        progress_labels = {
-            "plan": "Planning research",
-            "research_agent": "Executing research plan",
-            "draft": "Drafting evidence-based response",
-            "critique": "Checking response quality",
-            "revise": "Improving response",
-        }
-        if function.__name__ in progress_labels:
-            self._report(progress_labels[function.__name__])
-        log(f"NODE {function.__name__} | status=started")
-        try:
-            result = function(self, state)
-            log(f"NODE {function.__name__} | status=completed | elapsed={time.perf_counter() - started:.2f}s")
-            return result
-        except Exception as exc:
-            log(f"NODE {function.__name__} | status=failed | elapsed={time.perf_counter() - started:.2f}s | error={exc!r}")
-            raise
-    return wrapped
-
-
-class ResearchGraph:
+class ResearchGraph(ResearchNodes):
     def __init__(self, rag, document_handler: DocumentHandler | None = None, llm=None, progress_callback=None):
-        self.rag = rag
         self.llm = llm or build_llm()
         self.progress_callback = progress_callback
         self.tools = build_research_tools(rag, document_handler=document_handler)
@@ -73,6 +33,7 @@ class ResearchGraph:
         workflow.add_node("research_agent", self.research_agent)
         workflow.add_node("execute_tools", self.tool_node)
         workflow.add_node("collect_sources", self.collect_sources)
+        workflow.add_node("clear_research_sources", self.clear_research_sources)
         workflow.add_node("draft", self.draft)
         workflow.add_node("critique", self.critique)
         workflow.add_node("revise", self.revise)
@@ -82,10 +43,11 @@ class ResearchGraph:
             self.route_scope,
             {"scope_response": "scope_response", "direct_answer": "direct_answer", "clarify": "clarify", "plan": "plan", "end": END},
         )
-        workflow.add_edge("scope_response", END)
-        workflow.add_edge("direct_answer", END)
+        workflow.add_edge("scope_response", "clear_research_sources")
+        workflow.add_edge("direct_answer", "clear_research_sources")
+        workflow.add_edge("clear_research_sources", END)
         workflow.add_conditional_edges(
-            "clarify", self.route_clarification, {"plan": "plan", "end": END}
+            "clarify", self.route_clarification, {"plan": "plan", "end": "clear_research_sources"}
         )
         workflow.add_edge("plan", "research_agent")
         workflow.add_conditional_edges(
@@ -101,41 +63,10 @@ class ResearchGraph:
         workflow.add_edge("collect_sources", "draft")
         workflow.add_edge("draft", "critique")
         workflow.add_conditional_edges(
-            "critique", self.route_quality, {"revise": "revise", "end": END}
+            "critique", self.route_quality, {"revise": "revise", "end": "clear_research_sources"}
         )
         workflow.add_edge("revise", "critique")
         return workflow
-
-    @log_node
-    def scope_gate(self, state: ResearchState):
-        parser = fixing_parser(ScopeDecision, self.llm)
-        prompt = f"{SCOPE_SYSTEM}\n{parser.get_format_instructions()}\nUser request: {state.get('query', '')}"
-        try:
-            decision = parser.parse(self._invoke_llm("scope_gate_llm", [HumanMessage(content=prompt)]).content)
-            category = decision.category if decision.category in {"out_of_scope", "answerable", "needs_research"} else "needs_research"
-            return {
-                "scope_allowed": category != "out_of_scope",
-                "scope_category": category,
-                "scope_reason": decision.reason,
-                "scope_response": decision.response,
-            }
-        except Exception as exc:
-            log(f"SCOPE_GATE | fallback_to_research | error={exc!r}")
-            return {"scope_allowed": True, "scope_category": "needs_research", "scope_reason": "Scope classification failed; research is safer."}
-
-    @log_node
-    def scope_response(self, state: ResearchState):
-        return {"final_answer": state.get("scope_response", "Please provide a research question.")}
-
-    @log_node
-    def direct_answer(self, state: ResearchState):
-        prompt = f"{DIRECT_ANSWER_SYSTEM}\nUser request: {state.get('query', '')}"
-        response = self._invoke_llm("direct_answer_llm", [HumanMessage(content=prompt)])
-        return {"final_answer": str(response.content).strip()}
-
-    def _report(self, message: str) -> None:
-        if self.progress_callback:
-            self.progress_callback(message)
 
     def route_scope(self, state: ResearchState):
         if state.get("scope_category") == "out_of_scope":
@@ -146,63 +77,16 @@ class ResearchGraph:
             return "clarify"
         return "plan"
 
-    @log_node
-    def clarify(self, state: ResearchState):
-        answer = interrupt({"kind": "research_scope", "question": HITL_QUESTION})
-        return {"hitl_answer": str(answer), "needs_hitl": False}
+    def _report(self, message: str) -> None:
+        if self.progress_callback:
+            self.progress_callback(message)
 
     def route_clarification(self, state: ResearchState):
         return "plan" if state.get("hitl_answer") else "end"
 
-    @log_node
-    def plan(self, state: ResearchState):
-        parser = fixing_parser(ResearchPlan, self.llm)
-        memory = state.get("memory_context", {})
-        prompt = (
-            f"{PLANNER_SYSTEM}\n{parser.get_format_instructions()}\n"
-            f"Request: {state['query']}\nClarification: {state.get('hitl_answer', 'none')}\n"
-            f"User preferences: {memory.get('preferences', {})}\n"
-            f"Prior context summary: {memory.get('summary', '')}"
-        )
-        try:
-            result = self._invoke_llm(
-                "planner_llm", [HumanMessage(content=prompt)]
-            )
-            plan = parser.parse(result.content)
-            log(f"PLANNER | count={len(plan.steps)}")
-            for index, step in enumerate(plan.steps, start=1):
-                log(f"PLANNER | step={index} | executing_query={step!r}")
-            return {"plan": plan.steps, "current_step": 0, "tool_rounds": 0}
-        except Exception as exc:
-            log(f"PLANNER | fallback_to_original_query | error={exc!r}")
-            return {"plan": [state["query"]], "current_step": 0, "tool_rounds": 0}
-
-    @log_node
-    def research_agent(self, state: ResearchState):
-        model = self.llm.bind_tools(self.tools)
-        plan = "\n".join(f"- {step}" for step in state.get("plan", [state["query"]]))
-        memory = state.get("memory_context", {})
-        messages = [
-            SystemMessage(content=RESEARCH_AGENT_SYSTEM),
-            HumanMessage(
-                content=(
-                    f"Research request: {state['query']}\nResearch plan:\n{plan}\n"
-                    f"User preferences: {memory.get('preferences', {})}\n"
-                    f"Prior context summary: {memory.get('summary', '')}"
-                )
-            ),
-        ]
-        messages.extend(state.get("messages", []))
-        response = self._invoke_llm("research_agent_llm", messages, model=model)
-        tool_calls = getattr(response, "tool_calls", [])
-        log(f"RESEARCH_AGENT | tool_call_count={len(tool_calls)}")
-        for call in tool_calls:
-            log(f"RESEARCH_AGENT | selected_tool={call.get('name')} | args={call.get('args')}")
-        return {"messages": [response], "tool_rounds": state.get("tool_rounds", 0) + 1}
-
     def route_tools(self, state: ResearchState):
         if state.get("tool_rounds", 0) >= 3:
-            log("ROUTER | maximum tool rounds reached | route=collect_sources")
+            log("graph.routing.max_tool_rounds | next_step=collect_sources")
             return "collect_sources"
         messages = state.get("messages", [])
         tool_calls = messages[-1].tool_calls if messages else []
@@ -214,83 +98,15 @@ class ResearchGraph:
                     self._report(f"Searching {tool_name}: {query}")
                 else:
                     self._report(f"Using {tool_name}")
-            log(f"ROUTER | route=execute_tools | calls={len(tool_calls)}")
+            log(f"graph.routing.tools | next_step=execute_tools | call_count={len(tool_calls)}")
             return "execute_tools"
-        log("ROUTER | route=collect_sources | calls=0")
+        log("graph.routing.no_tools | next_step=collect_sources | call_count=0")
         return "collect_sources"
 
     def route_after_tools(self, state: ResearchState):
         route = "research_agent" if state.get("tool_rounds", 0) < 3 else "collect_sources"
-        log(f"ROUTER | after_tools={route} | tool_rounds={state.get('tool_rounds', 0)}")
+        log(f"graph.routing.after_tools | next_step={route} | round_count={state.get('tool_rounds', 0)}")
         return route
-
-    @log_node
-    def collect_sources(self, state: ResearchState):
-        sources = []
-        for message in state.get("messages", []):
-            if isinstance(message, ToolMessage):
-                content = str(message.content)
-                urls = re.findall(r"https?://[^\s)]+", content)
-                citations = re.findall(r"Citation:\s*([^\n]+)", content)
-                locations = citations or urls
-                sources.append(
-                    {
-                        "source": message.name or "research tool",
-                        "content": content,
-                        "locations": locations,
-                        "tool_call_id": message.tool_call_id,
-                    }
-                )
-        context = list(sources)
-        rag_used = any(source.get("source") == "rag_search" for source in sources)
-        log(f"SOURCES | rag_used={rag_used}")
-        log(f"SOURCES | external={len(sources)} | total_evidence={len(context)}")
-        return {"sources": sources, "retrieved_context": context}
-
-    @log_node
-    def draft(self, state: ResearchState):
-        evidence_blocks = []
-        for index, item in enumerate(state.get("retrieved_context", []), start=1):
-            locations = item.get("locations", [])
-            location = "; ".join(locations) or item.get("source", "")
-            evidence_blocks.append(
-                f"[{index}] Source: {item.get('source', '')}\n"
-                f"Location: {location}\n"
-                f"Content: {item.get('content', '')}"
-            )
-        context = "\n\n--- EVIDENCE ---\n".join(evidence_blocks)
-        prompt = SystemMessage(content=DRAFT_SYSTEM)
-        memory = state.get("memory_context", {})
-        user_prompt = (
-            f"{RAG_CONTEXT_LABEL}\n\nQuestion: {state['query']}\n"
-            f"User preferences: {memory.get('preferences', {})}\n"
-            f"Prior context summary: {memory.get('summary', '')}\n\n"
-            f"Evidence:\n{context or 'No external evidence was found.'}"
-        )
-        answer = self._invoke_llm(
-            "draft_llm", [prompt, HumanMessage(content=user_prompt)]
-        ).content
-        log(f"DRAFT | response_chars={len(str(answer))}")
-        return {"draft": str(answer), "iterations": state.get("iterations", 0)}
-
-    @log_node
-    def critique(self, state: ResearchState):
-        parser = fixing_parser(QualityReview, self.llm)
-        prompt = f"{CRITIQUE_SYSTEM}\n{parser.get_format_instructions()}\nQuestion: {state['query']}\nAnswer:\n{state.get('draft', '')}"
-        try:
-            review = parser.parse(self._invoke_llm("critique_llm", [HumanMessage(content=prompt)]).content)
-            log(f"CRITIQUE | score={review.score} | needs_more_research={review.needs_more_research} | issues={len(review.issues)}")
-            return {
-                "critique": review.model_dump_json(),
-                "iterations": state.get("iterations", 0) + 1,
-            }
-        except Exception:
-            return {
-                "critique": json.dumps(
-                    {"needs_more_research": False, "issues": ["Review unavailable"]}
-                ),
-                "iterations": state.get("iterations", 0) + 1,
-            }
 
     def route_quality(self, state: ResearchState):
         if state.get("iterations", 0) >= getattr(settings, "max_research_iterations", 2):
@@ -305,24 +121,6 @@ class ResearchGraph:
             )
         except json.JSONDecodeError:
             return "end"
-
-    @log_node
-    def revise(self, state: ResearchState):
-        prompt = HumanMessage(
-            content=f"{REVISION_SYSTEM}\nReview: {state.get('critique', '')}\nDraft: {state.get('draft', '')}"
-        )
-        answer = self._invoke_llm("revision_llm", [prompt]).content
-        log(f"REVISION | response_chars={len(str(answer))}")
-        return {"draft": str(answer)}
-
-    def _invoke_llm(self, label: str, messages, model=None):
-        delay_seconds = getattr(settings, "llm_call_delay_seconds", 20)
-        log(f"LLM {label} | throttle_sleep={delay_seconds}s")
-        time.sleep(delay_seconds)
-        started = time.perf_counter()
-        response = retry_call(lambda: (model or self.llm).invoke(messages), label)
-        log(f"LLM {label} | response_time={time.perf_counter() - started:.2f}s | response_chars={len(str(getattr(response, 'content', response)))}")
-        return response
 
     def invoke(
         self,

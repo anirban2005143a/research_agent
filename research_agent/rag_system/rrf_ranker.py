@@ -1,6 +1,7 @@
 """Reciprocal Rank Fusion for dense and lexical result lists."""
 
 from .data_types import RetrievedChunk
+from ..utils import log
 
 
 class RRFRanker:
@@ -36,8 +37,8 @@ class RRFRanker:
                 item.rrf_normalized = min(item.rrf_score / maximum, 1.0)
 
         ranked = ranked[:limit]
-        print(
-            f"[RAG][RRF] Dense={len(dense_results)}, BM25={len(lexical_results)} "
-            f"-> {len(ranked)} fused candidates"
+        log(
+            f"rag.rrf.completed | dense_count={len(dense_results)} "
+            f"| lexical_count={len(lexical_results)} | fused_count={len(ranked)}"
         )
         return ranked

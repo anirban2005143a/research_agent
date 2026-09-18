@@ -6,6 +6,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 
 from .data_types import RetrievedChunk
+from ..utils import log
 
 
 def _chunk_id(document: Document) -> str:
@@ -23,11 +24,11 @@ class LexicalRetriever:
         self.document_count = len(documents)
         if not documents:
             self.retriever = None
-            print("[RAG][BM25] No documents available")
+            log("rag.bm25.empty | document_count=0")
             return
 
         self.retriever = BM25Retriever.from_documents(documents, k=candidate_count)
-        print(f"[RAG][BM25] Index ready with {len(documents)} chunks")
+        log(f"rag.bm25.ready | chunk_count={len(documents)}")
 
     def search(self, query: str, limit: int) -> list[RetrievedChunk]:
         if self.retriever is None:

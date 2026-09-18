@@ -9,6 +9,7 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from ..config import settings
+from ..utils import log
 from .data_types import RetrievedChunk
 
 
@@ -16,7 +17,7 @@ _EMBEDDING_MODEL_ID = getattr(settings, "embedding_model_id", "BAAI/bge-m3")
 _EMBEDDING_CACHE_DIR = getattr(settings, "embedding_cache_dir", ".models")
 _EMBEDDING_LOCAL_ONLY = getattr(settings, "embedding_local_files_only", False)
 
-print(f"[RAG][EMBEDDING] Loading model at import: {_EMBEDDING_MODEL_ID}")
+log(f"rag.embedding.loading | model_id={_EMBEDDING_MODEL_ID}")
 _EMBEDDINGS = HuggingFaceEmbeddings(
     model_name=_EMBEDDING_MODEL_ID,
     cache_folder=_EMBEDDING_CACHE_DIR,
@@ -89,7 +90,7 @@ class DenseRetriever:
         ids = result.get("ids") or []
         if ids:
             self.vector_store.delete(ids=ids)
-            print(f"[RAG][VECTOR STORE] Removed {len(ids)} chunk(s) for: {filename}")
+            log(f"rag.vector_store.deleted | source={filename} | chunk_count={len(ids)}")
         return len(ids)
 
     def add_documents(self, chunks: list[Document], batch_size: int) -> None:
@@ -97,10 +98,10 @@ class DenseRetriever:
         for start in range(0, total, batch_size):
             end = min(start + batch_size, total)
             batch = chunks[start:end]
-            print(f"[RAG][VECTOR STORE] Storing embeddings of chunks {start + 1}-{end}/{total}")
+            log(f"rag.vector_store.storing | start={start + 1} | end={end} | total={total}")
             self.vector_store.add_documents(batch)
 
-        print(f"[RAG][VECTOR STORE] Stored {total} chunks")
+        log(f"rag.vector_store.stored | chunk_count={total}")
 
     def search(self, query: str, k: int) -> list[RetrievedChunk]:
         results = self.vector_store.similarity_search_with_relevance_scores(query, k=k)

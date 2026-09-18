@@ -34,3 +34,9 @@ ex: it should plan according to the tools and resourceswe have along with the ta
 14. check duplicate entry in chroma
 
 15. weather the env variables matches with other files 
+
+16. need to check weather the title , author came from the pdf metadata or ocr
+
+17. _source_quality_check - from tools.py , what it does ?
+
+18. need to check that how does the agent loops response . 

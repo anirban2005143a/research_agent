@@ -5,6 +5,7 @@ import math
 from sentence_transformers import CrossEncoder
 
 from ..config import settings
+from ..utils import log
 from .data_types import RetrievedChunk
 
 _CROSS_ENCODER_MODEL_ID = getattr(
@@ -13,7 +14,7 @@ _CROSS_ENCODER_MODEL_ID = getattr(
 _CROSS_ENCODER_LOCAL_ONLY = getattr(settings, "rag_cross_encoder_local_files_only", False)
 _CROSS_ENCODER_CACHE_DIR = getattr(settings, "rag_cross_encoder_cache_dir", ".models")
 
-print(f"[RAG][CROSS_ENCODER] Loading model at import: {_CROSS_ENCODER_MODEL_ID}")
+log(f"rag.cross_encoder.loading | model_id={_CROSS_ENCODER_MODEL_ID}")
 _CROSS_ENCODER_MODEL = CrossEncoder(
     model_name_or_path=_CROSS_ENCODER_MODEL_ID,
     cache_folder=_CROSS_ENCODER_CACHE_DIR,
@@ -38,7 +39,7 @@ class CrossEncoderRanker:
             return []
 
         if not getattr(settings, "rag_cross_encoder_enabled", True):
-            print("[RAG][CROSS_ENCODER] Disabled by configuration")
+            log("rag.cross_encoder.disabled | reason=configuration")
             return candidates
 
         model = self._load_model()
@@ -53,5 +54,5 @@ class CrossEncoderRanker:
             candidate.cross_encoder_score = value
             candidate.cross_encoder_normalized = 1.0 / (1.0 + math.exp(-value))
 
-        print(f"[RAG][CROSS ENCODER] Reranked {len(candidates)} candidates")
+        log(f"rag.cross_encoder.completed | candidate_count={len(candidates)}")
         return candidates

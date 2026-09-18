@@ -138,8 +138,6 @@ def main() -> None:
     # ---------------------------------------------------------
     k = _prompt_for_top_K()
 
-    print(type(k))
-
     # ---------------------------------------------------------
     # Get input files/directories
     # ---------------------------------------------------------
@@ -151,36 +149,6 @@ def main() -> None:
     print("\n[RAG] Initializing RAG engine...")
 
     rag = HybridRAG(session_id=session_id)
-
-    # # ---------------------------------------------------------
-    # # Find documents
-    # # ---------------------------------------------------------
-    # if input_paths:
-    #     print("\n[RAG] Searching for supported documents...")
-
-    #     files = _find_files(input_paths)
-
-    #     if not files:
-    #         raise SystemExit(
-    #             "\n[RAG] No supported documents found under the "
-    #             "provided input paths:\n"
-    #             + "\n".join(f"  - {path}" for path in input_paths)
-    #         )
-
-    #     print(f"[RAG] Found {len(files)} document(s).")
-
-    #     # -----------------------------------------------------
-    #     # Index documents
-    #     # -----------------------------------------------------
-    #     for index, path in enumerate(files, start=1):
-    #         print(
-    #             f"\n[RAG] Indexing document "
-    #             f"{index}/{len(files)}: {path}"
-    #         )
-
-    #         rag.store_document(path)
-
-    #     print("\n[RAG] Document indexing complete.")
 
     # ---------------------------------------------------------
     # Retrieve results
