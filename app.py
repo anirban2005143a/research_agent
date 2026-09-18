@@ -141,12 +141,11 @@ if question:
                 messages=st.session_state.memory.messages,
                 thread_id=st.session_state.thread_id,
                 memory_context=st.session_state.memory.context(),
-                progress_callback=show_progress,
             )
             if result.get("needs_hitl") and not result.get("hitl_answer"):
                 st.session_state.pending_question = result["hitl_question"]
                 st.session_state.pending_query = question
-            answer = result["final_answer"]
+            answer = result["final_response"]
         except Exception as exc:
             answer = f"Unable to start the research agent: {exc}"
     if progress_holder[0] is not None:
@@ -174,8 +173,7 @@ if st.session_state.pending_question:
                 hitl_answer=clarification,
                 thread_id=st.session_state.thread_id,
                 memory_context=st.session_state.memory.context(),
-                progress_callback=show_progress,
             )
-            st.session_state.memory.add("assistant", result["final_answer"])
+            st.session_state.memory.add("assistant", result["final_response"])
             st.session_state.pending_query = ""
             st.rerun()

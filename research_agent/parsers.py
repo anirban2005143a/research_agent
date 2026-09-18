@@ -9,8 +9,7 @@ from .config import settings
 
 class ScopeCategory(str, Enum):
     OUT_OF_SCOPE = "out_of_scope"
-    ANSWERABLE = "answerable"
-    NEEDS_RESEARCH = "needs_research"
+    IN_SCOPE = "in_scope"
 
 
 class ScopeDecision(BaseModel):
@@ -28,10 +27,11 @@ class ClarificationDecision(BaseModel):
 
 
 class ResponseEvaluation(BaseModel):
-    score: int = Field(ge=1, le=10)
-    issues: list[str] = Field(default_factory=list)
-    needs_more_research: bool = False
-    recommendation: str = ""
+    verdict: str = Field(description="Statement describing the quality and support of the response")
+    improvement_scopes: list[str] = Field(
+        default_factory=list,
+        description="Specific areas needing improvement; empty when the response is ready",
+    )
 
 
 class ResearchDraft(BaseModel):

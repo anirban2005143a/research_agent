@@ -1,4 +1,3 @@
-import json
 from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -15,15 +14,15 @@ from .utils import log
 
 
 class ResearchGraph(ResearchNodes):
-    def __init__(self, rag, document_handler: DocumentHandler | None = None, llm=None, progress_callback=None):
+    def __init__(self, rag, document_handler: DocumentHandler | None = None, llm=None):
         self.llm = llm or build_llm()
-        self.progress_callback = progress_callback
         self.tools = build_research_tools(rag, document_handler=document_handler)
         self.tool_node = ToolNode(self.tools)
         self.graph = self._build().compile(checkpointer=MemorySaver())
 
     def _build(self):
         workflow = StateGraph(ResearchState)
+        workflow.add_node("clean_state", self.clean_state)
         workflow.add_node("scope_gate", self.scope_gate)
         workflow.add_node("out_of_scope_response", self.out_of_scope_response)
         workflow.add_node("clarify_query", self.clarify_query)
@@ -31,19 +30,20 @@ class ResearchGraph(ResearchNodes):
         workflow.add_node("research_node", self.research_node)
         workflow.add_node("execute_tools", self.execute_tools)
         workflow.add_node("collect_informations", self.collect_informations)
-        workflow.add_node("clear_citations", self.clear_citations)
         workflow.add_node("evaluate_response", self.evaluate_response)
-        workflow.add_edge(START, "scope_gate")
+        workflow.add_node("finalize_response", self.finalize_response)
+        workflow.add_edge(START, "clean_state")
+        workflow.add_edge("clean_state", "scope_gate")
         workflow.add_conditional_edges(
             "scope_gate",
             self.route_scope,
             {"out_of_scope_response": "out_of_scope_response", "clarify_query": "clarify_query"},
         )
-        workflow.add_edge("out_of_scope_response", "clear_citations")
+        workflow.add_edge("out_of_scope_response", "finalize_response")
         workflow.add_conditional_edges(
             "clarify_query",
             self.route_clarification,
-            {"clarify_query": "clarify_query", "plan": "plan", "clear_citations": "clear_citations"},
+            {"clarify_query": "clarify_query", "plan": "plan", "finalize_response": "finalize_response"},
         )
         workflow.add_edge("plan", "research_node")
         workflow.add_edge("research_node", "execute_tools")
@@ -56,9 +56,9 @@ class ResearchGraph(ResearchNodes):
         workflow.add_conditional_edges(
             "evaluate_response",
             self.route_evaluation,
-            {"plan": "plan", "clear_citations": "clear_citations"},
+            {"plan": "plan", "finalize_response": "finalize_response"},
         )
-        workflow.add_edge("clear_citations", END)
+        workflow.add_edge("finalize_response", END)
         return workflow
 
     def route_scope(self, state: ResearchState):
@@ -66,30 +66,17 @@ class ResearchGraph(ResearchNodes):
             return "out_of_scope_response"
         return "clarify_query"
 
-    def _report(self, message: str) -> None:
-        if self.progress_callback:
-            self.progress_callback(message)
-
     def route_clarification(self, state: ResearchState):
         if state.get("hitl_answer"):
             return "clarify_query"
-        if state.get("final_answer"):
-            return "clear_citations"
+        if state.get("final_response"):
+            return "finalize_response"
         return "plan"
 
     def route_evaluation(self, state: ResearchState):
         if state.get("iterations", 0) >= 3:
-            return "clear_citations"
-        try:
-            return (
-                "plan"
-                if json.loads(state.get("evaluation", "{}")).get(
-                    "needs_more_research", False
-                )
-                else "clear_citations"
-            )
-        except json.JSONDecodeError:
-            return "clear_citations"
+            return "finalize_response"
+        return "plan" if state.get("evaluation", {}).get("improvement_scopes") else "finalize_response"
 
     def route_task_progress(self, state: ResearchState):
         """Continue with the next planned task or synthesize all collected responses."""
@@ -104,10 +91,7 @@ class ResearchGraph(ResearchNodes):
         hitl_answer: str = "",
         thread_id: str = "default",
         memory_context: dict[str, Any] | None = None,
-        progress_callback=None,
     ):
-        if progress_callback:
-            self.progress_callback = progress_callback
         config = {"configurable": {"thread_id": thread_id}}
         if hitl_answer:
             result = self.graph.invoke(Command(resume=hitl_answer), config=config)
@@ -123,9 +107,5 @@ class ResearchGraph(ResearchNodes):
         if result.get("__interrupt__"):
             result["needs_hitl"] = True
             result["hitl_question"] = result["__interrupt__"][0].value["question"]
-            result["final_answer"] = result["hitl_question"]
-        elif not result.get("scope_allowed"):
-            result["final_answer"] = result.get("final_answer", "")
-        elif result.get("draft") or not result.get("final_answer"):
-            result["final_answer"] = result.get("draft", "No answer was produced.")
+            result["final_response"] = result["hitl_question"]
         return result

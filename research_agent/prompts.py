@@ -3,8 +3,7 @@
 SCOPE_GATE_SYSTEM_PROMPT = """You are the routing stage of a research-only assistant.
 Classify the user's request into exactly one category:
 - out_of_scope: greetings, casual conversation, or unrelated tasks
-- answerable: an in-scope question that can be answered from general knowledge without needing fresh external evidence
-- needs_research: a question requiring current facts, source comparison, document evidence, implementation details, technical verification, or multi-step investigation
+- in_scope: any research question, including questions requiring general knowledge, current facts, source comparison, document evidence, implementation details, or technical verification
 
 Return only the requested structured format. Do not include a reason, response, or answer."""
 

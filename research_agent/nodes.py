@@ -1,7 +1,7 @@
 import json
 import re
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
 from .parsers import (
@@ -52,13 +52,10 @@ class ResearchNodes:
                 ).content
             )
             category = decision.category
-            return {
-                "scope_allowed": category != ScopeCategory.OUT_OF_SCOPE,
-                "scope_category": category.value,
-            }
+            return {"scope_category": category.value}
         except Exception as exc:
             log(f"graph.scope_gate.fallback | action=research | error={exc!r}")
-            return {"scope_allowed": True, "scope_category": "needs_research"}
+            return {"scope_category": ScopeCategory.IN_SCOPE.value}
 
     @log_function
     def out_of_scope_response(self, state):
@@ -73,7 +70,7 @@ class ResearchNodes:
                 HumanMessage(content=input_message),
             ],
         )
-        return {"final_answer": str(response.content).strip(), "citations": []}
+        return {"final_response": str(response.content).strip(), "citations": [], "needs_hitl": False}
 
     @log_function
     def clarify_query(self, state):
@@ -143,7 +140,7 @@ class ResearchNodes:
                 HumanMessage(content=UNCLEAR_QUERY_INPUT_TEMPLATE.format(query=query)),
             ],
         )
-        return {"final_answer": str(response.content).strip(), "citations": [], "needs_hitl": False}
+        return {"final_response": str(response.content).strip(), "citations": [], "needs_hitl": False}
 
     @log_function
     def plan(self, state):
@@ -153,7 +150,7 @@ class ResearchNodes:
         input_message = PLANNING_INPUT_TEMPLATE.format(
             query=state["query"],
             clarification=state.get("hitl_answer", "none"),
-            draft=state.get("draft", "No draft exists yet."),
+            draft=state.get("draft_response", "No draft exists yet."),
             evaluation=state.get("evaluation", "No evaluation exists yet."),
             preferences=memory.get("preferences", {}),
             summary=memory.get("summary", ""),
@@ -206,8 +203,6 @@ class ResearchNodes:
         """Execute the tool calls selected by the research node and preserve their responses."""
         messages = state.get("messages", [])
         tool_calls = messages[-1].tool_calls if messages else []
-        for call in tool_calls:
-            self._report(f"Using {call.get('name', 'research tool')}")
         if not tool_calls:
             return {"tool_responses": [], "current_task_index": state.get("current_task_index", 0) + 1}
         result = self.tool_node.invoke(state)
@@ -229,17 +224,48 @@ class ResearchNodes:
         log(f"graph.sources.collected | rag_used={rag_used} | source_count={len(sources)}")
         draft, citations = self._create_draft_and_select_citations(state, sources)
         return {
-            "sources": sources,
             "citations": citations,
             "tool_responses": [],
-            "draft": draft,
+            "draft_response": draft,
             "current_task_index": 0,
         }
 
     @log_function
-    def clear_citations(self, state):
-        """Clear temporary evidence and citation records before graph termination."""
-        return {"sources": [], "citations": [], "tool_responses": []}
+    def clean_state(self, state):
+        """Clear transient research data while preserving the current query and messages."""
+        return {
+            "query": state.get("query", ""),
+            "messages": state.get("messages", []),
+            "scope_category": "",
+            "tasks": [],
+            "current_task_index": 0,
+            "tool_responses": [],
+            "citations": [],
+            "draft_response": "",
+            "evaluation": {},
+            "iterations": 0,
+            "final_response": "",
+            "hitl_answer": "",
+            "needs_hitl": False,
+        }
+
+    @log_function
+    def finalize_response(self, state):
+        """Store the final response and replace transient message history with the completed turn."""
+        final_response = state.get("final_response") or state.get("draft_response", "No answer was produced.")
+        return {
+            "final_response": final_response,
+            "messages": [
+                HumanMessage(content=state.get("query", "")),
+                AIMessage(content=final_response),
+            ],
+            "tasks": [],
+            "current_task_index": 0,
+            "tool_responses": [],
+            "citations": state.get("citations", []),
+            "draft_response": state.get("draft_response", ""),
+            "evaluation": state.get("evaluation", {}),
+        }
 
     def _create_draft_and_select_citations(self, state, sources):
         """Create a draft from aggregated sources and return the LLM-selected source records."""
@@ -272,7 +298,7 @@ class ResearchNodes:
                 ).content
             )
             answer = result.answer
-            citations = self._select_citations(result.citation_ids, state.get("sources", []))
+            citations = self._select_citations(result.citation_ids, sources)
         except Exception as exc:
             log(f"graph.collect_informations.draft_fallback | error={exc!r}")
             answer = str(
@@ -289,7 +315,7 @@ class ResearchNodes:
     def evaluate_response(self, state):
         """Evaluate the draft and report whether further research is needed."""
         parser = llm_response_fixing_parser(ResponseEvaluation, self.llm)
-        input_message = f"Question:\n{state['query']}\n\nAnswer:\n{state.get('draft', '')}"
+        input_message = f"Question:\n{state['query']}\n\nAnswer:\n{state.get('draft_response', '')}"
         try:
             review = parser.parse(
                 self._invoke_llm(
@@ -300,14 +326,17 @@ class ResearchNodes:
                     ],
                 ).content
             )
-            log(f"graph.evaluate_response.completed | score={review.score} | needs_more_research={review.needs_more_research} | issue_count={len(review.issues)}")
+            log(f"graph.evaluate_response.completed | improvement_scope_count={len(review.improvement_scopes)}")
             return {
-                "evaluation": review.model_dump_json(),
+                "evaluation": review.model_dump(),
                 "iterations": state.get("iterations", 0) + 1,
             }
         except Exception:
             return {
-                "evaluation": json.dumps({"needs_more_research": False, "issues": ["Review unavailable"]}),
+                "evaluation": {
+                    "verdict": "Evaluation was unavailable.",
+                    "improvement_scopes": [],
+                },
                 "iterations": state.get("iterations", 0) + 1,
             }
 
@@ -318,7 +347,8 @@ class ResearchNodes:
     def _tool_messages_to_records(self, tool_messages):
         records = []
         for message in tool_messages:
-            content = str(message.content)
+            raw_content = message.content
+            content = str(raw_content)
             try:
                 payload = json.loads(content)
             except json.JSONDecodeError:
@@ -338,7 +368,7 @@ class ResearchNodes:
             records.append(
                 {
                     "source": message.name or "research tool",
-                    "content": content,
+                    "content": payload if payload is not None else raw_content,
                     "locations": re.findall(r"https?://[^\s)]+", content),
                     "metadata": {
                         "tool": message.name or "research tool",

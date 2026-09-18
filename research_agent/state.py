@@ -1,23 +1,18 @@
-from typing import Annotated, Any, TypedDict
-
-from langgraph.graph.message import add_messages
-
+from typing import Any, TypedDict
 
 class ResearchState(TypedDict, total=False):
     query: str
-    messages: Annotated[list[Any], add_messages]
+    messages: list[Any]
     memory_context: dict[str, Any]
-    scope_allowed: bool
     scope_category: str
     tasks: list[str]
     current_task_index: int
     tool_responses: list[dict[str, Any]]
-    sources: list[dict[str, Any]]
     citations: list[dict[str, Any]]
-    draft: str
-    evaluation: str
+    draft_response: str
+    evaluation: dict[str, Any]
     iterations: int
-    final_answer: str
+    final_response: str
     hitl_question: str
     hitl_answer: str
     needs_hitl: bool

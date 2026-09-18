@@ -319,41 +319,43 @@ The RAG package supplies grounded evidence; the broader agent is responsible for
 
 ### Research Graph Flow
 
-The research graph is implemented by `ResearchGraph` in `research_agent/graph.py`. Scope routing sends out-of-scope requests to an LLM-guided response and sends all allowed requests through conditional clarification, planning, one multi-tool research pass, source aggregation, drafting, and evaluation.
+The research graph is implemented by `ResearchGraph` in `research_agent/graph.py`. Scope routing sends out-of-scope requests to an LLM-guided response and sends in-scope requests through conditional clarification, planning, sequential task execution, response aggregation, drafting, and evaluation.
 
 ```mermaid
 flowchart TD
-    START([START]) --> SCOPE[scope_gate]
+    START([START]) --> CLEAN[clean_state]
 
     SCOPE -->|out_of_scope| OUT_OF_SCOPE[out_of_scope_response]
     SCOPE -->|any allowed request| CLARIFY{{clarify_query<br/>LLM decides whether clarification is needed}}
 
-    OUT_OF_SCOPE --> CLEAR[clear_citations]
+    OUT_OF_SCOPE --> FINALIZE[finalize_response]
     CLARIFY -->|query is clear| PLAN
     CLARIFY -->|clarification needed| HITL{{HITL question}}
     HITL -->|user answers| CLARIFY
     HITL -->|user skips| UNCLEAR[LLM unclear-query response]
-    UNCLEAR --> CLEAR
-    CLEAR --> END([END])
+    UNCLEAR --> FINALIZE
+    FINALIZE --> END([END])
 
     PLAN --> AGENT[research_node<br/>one task at a time]
     AGENT --> TOOLS[execute_tools]
     TOOLS -->|tasks remain| AGENT
-    TOOLS -->|all tasks complete| COLLECT[collect_informations<br/>aggregate, draft, store sources]
+    TOOLS -->|all tasks complete| COLLECT[collect_informations<br/>aggregate, draft, store citations]
 
     COLLECT --> EVALUATE[evaluate_response]
     EVALUATE -->|needs improvement and iterations < 3| PLAN
-    EVALUATE -->|accepted or iterations = 3| CLEAR
+    EVALUATE -->|accepted or iterations = 3| FINALIZE
+
+    CLEAN --> SCOPE
 ```
 
 Graph state follows the evidence through the workflow:
 
-- `messages` stores the agent and tool interaction history.
+- `messages` is transient during tool execution and is replaced at finalization with the normalized query and final response.
 - `tasks` stores the ordered research tasks; `current_task_index` identifies the task being executed.
-- `sources` stores complete evidence records, including source IDs, metadata, locations, and content.
-- `tool_responses` temporarily stores tool output records with content and source information.
-- `citations` stores the source records selected by the drafting LLM.
-- `draft` and `evaluation` carry the answer and evaluation results until the graph completes.
+- `tool_responses` stores raw tool output records with content and source information.
+- `citations` stores the source records selected by `collect_informations`.
+- `draft_response` and `evaluation` carry the answer and evaluation results until finalization.
+- `final_response` is the user-facing completed response.
 
 ## Logging
 
