@@ -48,7 +48,7 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
             lambda: rag.retrieve(query, k=getattr(settings, "rag_top_k", 8)),
             "tool.rag_search",
         )
-        result_records = _search_results_to_records(matches)
+        result_records = _rag_search_results_to_records(matches)
         log(f"tool.completed | name=rag_search | matches={len(result_records)}")
         return {
             "result_type": "rag_search_results",
@@ -95,18 +95,48 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
     ]
 
 
-def _search_results_to_records(search_results: SearchResults) -> list[dict[str, Any]]:
-    """Convert internal Pydantic retrieval results into LangChain-safe JSON records."""
+def _rag_search_results_to_records(search_results: SearchResults | Any) -> list[dict[str, Any]]:
+    """Convert retrieval results into LangChain-safe JSON records."""
+    if isinstance(search_results, SearchResults):
+        results = search_results.results
+    elif isinstance(search_results, dict):
+        results = search_results.get("results", [])
+    elif isinstance(search_results, list):
+        results = search_results
+    else:
+        results = getattr(search_results, "results", None)
+        if results is None:
+            results = getattr(search_results, "items", None)
+        if results is None:
+            results = getattr(search_results, "matches", None)
+        if results is None:
+            log(
+                "tool.rag_search.unrecognized_result | "
+                f"type={type(search_results).__name__}"
+            )
+            return []
+
     records = []
-    for result in search_results.results:
-        metadata = result.document.metadata
+    for result in results:
+        document = getattr(result, "document", None)
+        if document is None:
+            document = result.get("document") if isinstance(result, dict) else None
+        if document is None:
+            continue
+        metadata = document.metadata
+        if isinstance(result, dict):
+            chunk_id = result.get("chunk_id", "")
+            score = result.get("final_score", 0.0)
+        else:
+            chunk_id = getattr(result, "chunk_id", "")
+            score = getattr(result, "final_score", 0.0)
         records.append(
             {
-                "chunk_id": result.chunk_id,
+                "chunk_id": chunk_id,
                 "source": metadata.get("source", "unknown"),
                 "citation": _citation_for(metadata),
-                "content": result.document.page_content,
-                "score": result.final_score,
+                "content": document.page_content,
+                "score": score,
                 "metadata": metadata,
             }
         )

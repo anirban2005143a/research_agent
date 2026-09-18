@@ -40,3 +40,10 @@ ex: it should plan according to the tools and resourceswe have along with the ta
 17. _source_quality_check - from tools.py , what it does ?
 
 18. need to check that how does the agent loops response . 
+
+===========================================================================================================================
+
+1. one thing just for information and showcase purpose , can you also write the session in-memory data to a json file , just to show case that we have implimented this thing  
+
+2. in the plan node , where the tasks are generated , i can see that it always generate 5 tasks . rather leve it on llm and provide that not mor than 5 tasks are allowed . check the currect code and update prompt if needed 
+
