@@ -15,11 +15,25 @@ class ScopeDecision(BaseModel):
     response: str = Field(description="Natural response if out_of_scope; otherwise a brief acknowledgement")
 
 
-class QualityReview(BaseModel):
+class ClarificationDecision(BaseModel):
+    needs_clarification: bool = Field(description="Whether the research query needs a user clarification before planning")
+    question: str = Field(description="One focused clarification question, or an empty string when clarification is not needed")
+    final_query: str = Field(description="A clean, specific, expanded research query ready for planning when clarification is not needed")
+
+
+class ResponseEvaluation(BaseModel):
     score: int = Field(ge=1, le=10)
     issues: list[str] = Field(default_factory=list)
     needs_more_research: bool = False
     recommendation: str = ""
+
+
+class ResearchDraft(BaseModel):
+    answer: str = Field(description="The complete research answer with inline [source_id] citations.")
+    citation_ids: list[str] = Field(
+        default_factory=list,
+        description="Source IDs that directly support claims in the answer, in citation order.",
+    )
 
 
 def fixing_parser(model: type[BaseModel], llm):

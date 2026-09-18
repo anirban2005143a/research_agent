@@ -23,38 +23,12 @@ class FileInput(BaseModel):
     )
 
 
-class QualityInput(BaseModel):
-    source_text: str = Field(description="Source text or metadata to assess.")
-
-
 def _web_search(query: str) -> str:
     log(f"tool.web_search.started | query={query!r}")
     results = retry_call(lambda: DuckDuckGoSearchRun().invoke(query), "tool.web_search")
     if not results:
         return "No web sources found. The available external knowledge may not cover this query."
     return str(results)
-
-
-def _source_quality_check(source_text: str) -> dict[str, Any]:
-    """Count credibility-related indicators in source text; this is not verification."""
-    markers = [
-        "doi",
-        "journal",
-        "publisher",
-        "government",
-        "university",
-        "arxiv",
-        "methods",
-    ]
-    normalized_text = source_text.lower()
-    matched_markers = [marker for marker in markers if marker in normalized_text]
-    return {
-        "marker_count": len(matched_markers),
-        "marker_total": len(markers),
-        "matched_markers": matched_markers,
-        "assessment": "heuristic_only",
-        "message": "Credibility indicators were found; verify the primary source before making strong claims.",
-    }
 
 
 def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | None = None) -> list[Any]:
@@ -96,12 +70,6 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
         log("tool.list_stored_files.started")
         return retry_call(document_handler.list_files, "tool.list_stored_files")
 
-    @tool("source_quality_check", args_schema=QualityInput)
-    def source_quality_check(source_text: str) -> dict[str, Any]:
-        """Use to assess whether a source shows signs of authority (publisher, methods, DOI, institution, etc.). This does not prove correctness; it only flags credibility signals."""
-        log(f"tool.source_quality_check.started | character_count={len(source_text)}")
-        return _source_quality_check(source_text)
-
     wikipedia_backend = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(top_k_results=3))
     arxiv_backend = ArxivQueryRun(api_wrapper=ArxivAPIWrapper(top_k_results=5, load_max_docs=5))
 
@@ -124,7 +92,6 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
         list_stored_files,
         wikipedia_search,
         arxiv_search,
-        source_quality_check,
     ]
 
 

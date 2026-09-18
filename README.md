@@ -317,6 +317,43 @@ The broader Research Agent still follows this high-level pattern:
 
 The RAG package supplies grounded evidence; the broader agent is responsible for planning, tool use, synthesis, and final response generation.
 
+### Research Graph Flow
+
+The research graph is implemented by `ResearchGraph` in `research_agent/graph.py`. Scope routing sends out-of-scope requests to an LLM-guided response and sends all allowed requests through conditional clarification, planning, one multi-tool research pass, source aggregation, drafting, and evaluation.
+
+```mermaid
+flowchart TD
+    START([START]) --> SCOPE[scope_gate]
+
+    SCOPE -->|out_of_scope| OUT_OF_SCOPE[out_of_scope_response]
+    SCOPE -->|any allowed request| CLARIFY{{clarify_query<br/>LLM decides whether clarification is needed}}
+
+    OUT_OF_SCOPE --> CLEAR[clear_citations]
+    CLARIFY -->|query is clear| PLAN
+    CLARIFY -->|clarification needed| HITL{{HITL question}}
+    HITL -->|user answers| CLARIFY
+    HITL -->|user skips| UNCLEAR[LLM unclear-query response]
+    UNCLEAR --> CLEAR
+    CLEAR --> END([END])
+
+    PLAN --> AGENT[research_node]
+    AGENT --> TOOLS[execute_tools<br/>all planned tool calls]
+    TOOLS --> COLLECT[collect_informations<br/>aggregate and clear tool_responses]
+
+    COLLECT --> DRAFT[draft_response<br/>LLM selects citation IDs]
+    DRAFT --> EVALUATE[evaluate_response]
+    EVALUATE -->|needs improvement and iterations < 3| PLAN
+    EVALUATE -->|accepted or iterations = 3| CLEAR
+```
+
+Graph state follows the evidence through the workflow:
+
+- `messages` stores the agent and tool interaction history.
+- `sources` stores complete evidence records, including source IDs, metadata, locations, and content.
+- `tool_responses` temporarily stores tool output records with content and source information.
+- `citations` stores the source records selected by the drafting LLM.
+- `draft` and `evaluation` carry the answer and evaluation results until the graph completes.
+
 ## Logging
 
 The local pipeline prints progress markers such as:
