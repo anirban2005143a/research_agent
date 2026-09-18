@@ -353,7 +353,7 @@ Graph state follows the evidence through the workflow:
 - `messages` is transient during tool execution and is replaced at finalization with the normalized query and final response.
 - `tasks` stores the ordered research tasks; `current_task_index` identifies the task being executed.
 - `tool_responses` stores raw tool output records with content and source information.
-- `citations` stores the source records selected by `collect_informations`.
+- `citations` stores the deduplicated citation strings selected by the LLM in `collect_informations`.
 - `draft_response` and `evaluation` carry the answer and evaluation results until finalization.
 - `final_response` is the user-facing completed response.
 

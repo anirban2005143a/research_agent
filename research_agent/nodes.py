@@ -1,12 +1,8 @@
-import json
-import re
-
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import interrupt
 
 from .parsers import (
     ClarificationDecision,
-    ResearchDraft,
     ResearchPlan,
     ResponseEvaluation,
     ScopeCategory,
@@ -16,15 +12,12 @@ from .parsers import (
 from .prompts import (
     CLARIFY_QUERY_INPUT_TEMPLATE,
     CLARIFY_QUERY_SYSTEM_PROMPT,
-    DRAFT_RESPONSE_INPUT_TEMPLATE,
-    DRAFT_RESPONSE_SYSTEM_PROMPT,
     EVALUATE_RESPONSE_SYSTEM_PROMPT,
     HITL_CLARIFICATION_QUESTION,
     OUT_OF_SCOPE_INPUT_TEMPLATE,
     OUT_OF_SCOPE_RESPONSE_SYSTEM_PROMPT,
     PLANNING_INPUT_TEMPLATE,
     PLANNING_SYSTEM_PROMPT,
-    RAG_EVIDENCE_CONTEXT,
     RESEARCH_NODE_INPUT_TEMPLATE,
     RESEARCH_NODE_SYSTEM_PROMPT,
     SCOPE_GATE_SYSTEM_PROMPT,
@@ -32,7 +25,13 @@ from .prompts import (
     UNCLEAR_QUERY_INPUT_TEMPLATE,
     UNCLEAR_QUERY_RESPONSE_SYSTEM_PROMPT,
 )
-from .utils import log, log_function, retry_call
+from .node_helpers import (
+    create_draft_and_select_citations,
+    invoke_llm,
+    merge_citations,
+    tool_messages_to_records,
+)
+from .utils import log, log_function
 
 
 class ResearchNodes:
@@ -43,7 +42,7 @@ class ResearchNodes:
         input_message = f"User request:\n{state.get('query', '')}"
         try:
             decision = parser.parse(
-                self._invoke_llm(
+                invoke_llm(self.llm,
                     "scope_gate_llm",
                     [
                         SystemMessage(content=SCOPE_GATE_SYSTEM_PROMPT),
@@ -63,7 +62,7 @@ class ResearchNodes:
         input_message = OUT_OF_SCOPE_INPUT_TEMPLATE.format(
             query=state.get("query", ""),
         )
-        response = self._invoke_llm(
+        response = invoke_llm(self.llm,
             "out_of_scope_response_llm",
             [
                 SystemMessage(content=OUT_OF_SCOPE_RESPONSE_SYSTEM_PROMPT),
@@ -84,7 +83,7 @@ class ResearchNodes:
             )
             try:
                 decision = parser.parse(
-                    self._invoke_llm(
+                    invoke_llm(self.llm,
                         "clarified_query_llm",
                         [
                             SystemMessage(content=CLARIFY_QUERY_SYSTEM_PROMPT),
@@ -105,7 +104,7 @@ class ResearchNodes:
         input_message = SINGLE_QUERY_INPUT_TEMPLATE.format(query=query)
         try:
             decision = parser.parse(
-                self._invoke_llm(
+                invoke_llm(self.llm,
                     "clarify_query_llm",
                     [
                         SystemMessage(content=CLARIFY_QUERY_SYSTEM_PROMPT),
@@ -133,7 +132,7 @@ class ResearchNodes:
         if answer_text:
             return {"hitl_answer": answer_text, "needs_hitl": False}
 
-        response = self._invoke_llm(
+        response = invoke_llm(self.llm,
             "unclear_query_response_llm",
             [
                 SystemMessage(content=UNCLEAR_QUERY_RESPONSE_SYSTEM_PROMPT),
@@ -156,7 +155,7 @@ class ResearchNodes:
             summary=memory.get("summary", ""),
         )
         try:
-            result = self._invoke_llm(
+            result = invoke_llm(self.llm,
                 "planner_llm",
                 [
                     SystemMessage(content=PLANNING_SYSTEM_PROMPT),
@@ -191,7 +190,7 @@ class ResearchNodes:
             HumanMessage(content=input_message),
         ]
         messages.extend(state.get("messages", []))
-        response = self._invoke_llm("research_node_llm", messages, model=model)
+        response = invoke_llm(self.llm, "research_node_llm", messages, model=model)
         tool_calls = getattr(response, "tool_calls", [])
         log(f"graph.research_node.tool_calls | count={len(tool_calls)}")
         for call in tool_calls:
@@ -209,7 +208,7 @@ class ResearchNodes:
         tool_messages = result.get("messages", [])
         return {
             "messages": tool_messages,
-            "tool_responses": state.get("tool_responses", []) + self._tool_messages_to_records(tool_messages),
+            "tool_responses": state.get("tool_responses", []) + tool_messages_to_records(tool_messages),
             "current_task_index": state.get("current_task_index", 0) + 1,
         }
 
@@ -218,11 +217,13 @@ class ResearchNodes:
         """Aggregate tool responses, draft the answer, and store the selected sources."""
         sources = []
         for response in state.get("tool_responses", []):
-            source_id = f"source-{len(sources) + 1}"
-            sources.append({**response, "source_id": source_id})
+            sources.append(response)
         rag_used = any(source.get("source") == "rag_search" for source in sources)
         log(f"graph.sources.collected | rag_used={rag_used} | source_count={len(sources)}")
-        draft, citations = self._create_draft_and_select_citations(state, sources)
+        draft, recent_citations = create_draft_and_select_citations(self.llm, state, sources)
+        citations = merge_citations(
+            self.llm, state.get("citations", []), recent_citations, draft
+        )
         return {
             "citations": citations,
             "tool_responses": [],
@@ -263,53 +264,9 @@ class ResearchNodes:
             "current_task_index": 0,
             "tool_responses": [],
             "citations": state.get("citations", []),
-            "draft_response": state.get("draft_response", ""),
+            "draft_response": "",
             "evaluation": state.get("evaluation", {}),
         }
-
-    def _create_draft_and_select_citations(self, state, sources):
-        """Create a draft from aggregated sources and return the LLM-selected source records."""
-        evidence_blocks = []
-        for item in sources:
-            locations = item.get("locations", [])
-            location = "; ".join(locations) or item.get("source", "")
-            evidence_blocks.append(
-                f"Source ID: {item.get('source_id', '')}\n"
-                f"Source: {item.get('source', '')}\n"
-                f"Location: {location}\n"
-                f"Metadata: {json.dumps(item.get('metadata', {}), ensure_ascii=True)}\n"
-                f"Content: {item.get('content', '')}"
-            )
-        context = "\n\n--- EVIDENCE ---\n".join(evidence_blocks)
-        memory = state.get("memory_context", {})
-        input_message = (
-            f"{RAG_EVIDENCE_CONTEXT}\n\n"
-            f"{DRAFT_RESPONSE_INPUT_TEMPLATE.format(query=state['query'], preferences=memory.get('preferences', {}), summary=memory.get('summary', ''), evidence=context or 'No external evidence was found.')}"
-        )
-        parser = llm_response_fixing_parser(ResearchDraft, self.llm)
-        try:
-            result = parser.parse(
-                self._invoke_llm(
-                    "draft_llm",
-                    [
-                        SystemMessage(content=DRAFT_RESPONSE_SYSTEM_PROMPT),
-                        HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
-                    ],
-                ).content
-            )
-            answer = result.answer
-            citations = self._select_citations(result.citation_ids, sources)
-        except Exception as exc:
-            log(f"graph.collect_informations.draft_fallback | error={exc!r}")
-            answer = str(
-                self._invoke_llm(
-                    "draft_response_llm_fallback",
-                    [SystemMessage(content=DRAFT_RESPONSE_SYSTEM_PROMPT), HumanMessage(content=input_message)],
-                ).content
-            )
-            citations = []
-        log(f"graph.collect_informations.completed | response_chars={len(str(answer))} | citation_count={len(citations)}")
-        return str(answer), citations
 
     @log_function
     def evaluate_response(self, state):
@@ -318,7 +275,7 @@ class ResearchNodes:
         input_message = f"Question:\n{state['query']}\n\nAnswer:\n{state.get('draft_response', '')}"
         try:
             review = parser.parse(
-                self._invoke_llm(
+                invoke_llm(self.llm,
                     "evaluation_llm",
                     [
                         SystemMessage(content=EVALUATE_RESPONSE_SYSTEM_PROMPT),
@@ -340,46 +297,3 @@ class ResearchNodes:
                 "iterations": state.get("iterations", 0) + 1,
             }
 
-    def _select_citations(self, citation_ids, sources):
-        selected_ids = set(citation_ids)
-        return [source for source in sources if source.get("source_id") in selected_ids]
-
-    def _tool_messages_to_records(self, tool_messages):
-        records = []
-        for message in tool_messages:
-            raw_content = message.content
-            content = str(raw_content)
-            try:
-                payload = json.loads(content)
-            except json.JSONDecodeError:
-                payload = None
-            if isinstance(payload, dict) and payload.get("result_type") == "rag_search_results":
-                for result in payload.get("results", []):
-                    records.append(
-                        {
-                            "source": result.get("source", message.name or "rag_search"),
-                            "content": result.get("content", ""),
-                            "locations": [result.get("citation", "")],
-                            "metadata": result.get("metadata", {}),
-                            "tool_call_id": message.tool_call_id,
-                        }
-                    )
-                continue
-            records.append(
-                {
-                    "source": message.name or "research tool",
-                    "content": payload if payload is not None else raw_content,
-                    "locations": re.findall(r"https?://[^\s)]+", content),
-                    "metadata": {
-                        "tool": message.name or "research tool",
-                        "tool_call_id": message.tool_call_id,
-                    },
-                    "tool_call_id": message.tool_call_id,
-                }
-            )
-        return records
-
-    def _invoke_llm(self, label: str, messages, model=None):
-        response = retry_call(lambda: (model or self.llm).invoke(messages), label)
-        log(f"llm.completed | name={label} | response_chars={len(str(getattr(response, 'content', response)))}")
-        return response

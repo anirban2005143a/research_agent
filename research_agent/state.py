@@ -1,18 +1,18 @@
-from typing import Any, TypedDict
+from typing import Annotated, Any, TypedDict
 
 class ResearchState(TypedDict, total=False):
-    query: str
-    messages: list[Any]
-    memory_context: dict[str, Any]
-    scope_category: str
-    tasks: list[str]
-    current_task_index: int
-    tool_responses: list[dict[str, Any]]
-    citations: list[dict[str, Any]]
-    draft_response: str
-    evaluation: dict[str, Any]
-    iterations: int
-    final_response: str
-    hitl_question: str
-    hitl_answer: str
-    needs_hitl: bool
+    query: Annotated[str, "Clean research query used by every downstream node."]
+    messages: Annotated[list[Any], "Transient LangGraph messages used during tool execution; replaced at finalization."]
+    memory_context: Annotated[dict[str, Any], "User preferences and prior conversation context."]
+    scope_category: Annotated[str, "LLM scope classification: out_of_scope or in_scope."]
+    tasks: Annotated[list[str], "Ordered research tasks created by the planning node."]
+    current_task_index: Annotated[int, "Zero-based index of the task currently being executed."]
+    tool_responses: Annotated[list[dict[str, Any]], "Raw tool records containing content and source information."]
+    citations: Annotated[list[str], "Unique citation strings selected and merged by the LLM."]
+    draft_response: Annotated[str, "Latest synthesized research response before evaluation."]
+    evaluation: Annotated[dict[str, Any], "Evaluation verdict and improvement scopes for the latest draft."]
+    iterations: Annotated[int, "Number of draft evaluations completed in this run."]
+    final_response: Annotated[str, "User-facing response produced at graph finalization."]
+    hitl_question: Annotated[str, "Clarification question currently waiting for a user answer."]
+    hitl_answer: Annotated[str, "User answer to the clarification question."]
+    needs_hitl: Annotated[bool, "Whether graph execution is waiting for human clarification."]

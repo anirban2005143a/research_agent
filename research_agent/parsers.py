@@ -35,10 +35,17 @@ class ResponseEvaluation(BaseModel):
 
 
 class ResearchDraft(BaseModel):
-    answer: str = Field(description="The complete research answer with inline [source_id] citations.")
-    citation_ids: list[str] = Field(
+    answer: str = Field(description="The complete research answer with inline citations where appropriate.")
+    citations: list[str] = Field(
         default_factory=list,
-        description="Source IDs that directly support claims in the answer, in citation order.",
+        description="Source names, URLs, filenames, or other exact citation strings used in the answer.",
+    )
+
+
+class CitationMerge(BaseModel):
+    citations: list[str] = Field(
+        default_factory=list,
+        description="Necessary, unique citation strings selected from the old and recent citation lists.",
     )
 
 
