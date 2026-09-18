@@ -9,8 +9,8 @@ class ResearchState(TypedDict, total=False):
     memory_context: dict[str, Any]
     scope_allowed: bool
     scope_category: str
-    out_of_scope_response: str
-    plan: list[str]
+    tasks: list[str]
+    current_task_index: int
     tool_responses: list[dict[str, Any]]
     sources: list[dict[str, Any]]
     citations: list[dict[str, Any]]

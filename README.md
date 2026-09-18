@@ -336,12 +336,12 @@ flowchart TD
     UNCLEAR --> CLEAR
     CLEAR --> END([END])
 
-    PLAN --> AGENT[research_node]
-    AGENT --> TOOLS[execute_tools<br/>all planned tool calls]
-    TOOLS --> COLLECT[collect_informations<br/>aggregate and clear tool_responses]
+    PLAN --> AGENT[research_node<br/>one task at a time]
+    AGENT --> TOOLS[execute_tools]
+    TOOLS -->|tasks remain| AGENT
+    TOOLS -->|all tasks complete| COLLECT[collect_informations<br/>aggregate, draft, store sources]
 
-    COLLECT --> DRAFT[draft_response<br/>LLM selects citation IDs]
-    DRAFT --> EVALUATE[evaluate_response]
+    COLLECT --> EVALUATE[evaluate_response]
     EVALUATE -->|needs improvement and iterations < 3| PLAN
     EVALUATE -->|accepted or iterations = 3| CLEAR
 ```
@@ -349,6 +349,7 @@ flowchart TD
 Graph state follows the evidence through the workflow:
 
 - `messages` stores the agent and tool interaction history.
+- `tasks` stores the ordered research tasks; `current_task_index` identifies the task being executed.
 - `sources` stores complete evidence records, including source IDs, metadata, locations, and content.
 - `tool_responses` temporarily stores tool output records with content and source information.
 - `citations` stores the source records selected by the drafting LLM.

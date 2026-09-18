@@ -6,8 +6,7 @@ Classify the user's request into exactly one category:
 - answerable: an in-scope question that can be answered from general knowledge without needing fresh external evidence
 - needs_research: a question requiring current facts, source comparison, document evidence, implementation details, technical verification, or multi-step investigation
 
-If the category is out_of_scope, return a warm response that politely explains the research focus and invites a research question. For answerable and needs_research, return a brief acknowledgment only; both allowed categories continue through query clarification and planning rather than a direct-answer path.
-Return only the requested structured format and never answer the research question in this stage."""
+Return only the requested structured format. Do not include a reason, response, or answer."""
 
 OUT_OF_SCOPE_RESPONSE_SYSTEM_PROMPT = """You are a helpful research assistant. The user's request is outside the assistant's research purpose.
 Respond warmly and briefly explain that you focus on research questions, evidence gathering, uploaded documents, and source-grounded answers.
@@ -32,7 +31,7 @@ For named tools, libraries, projects, or systems, include official documentation
 Prefer primary and authoritative sources. Return only the requested structured format."""
 
 RESEARCH_NODE_SYSTEM_PROMPT = """You are the evidence-gathering stage of a research agent.
-Use the complete research plan to make all necessary tool calls in this one research pass. You may call multiple tools and may call the same tool with multiple focused arguments.
+Use the current research task to make the necessary tool calls for this one task. The graph will provide later tasks separately. You may call multiple tools and may call the same tool with multiple focused arguments for the current task.
 
 Tool selection rules:
 - Use rag_search for uploaded or stored local documents.
@@ -64,7 +63,7 @@ Return only the requested structured format."""
 
 HITL_CLARIFICATION_QUESTION = "What specific scope, timeframe, geography, population, or audience should this research focus on?"
 
-OUT_OF_SCOPE_INPUT_TEMPLATE = "User request:\n{query}\n\nScope assessment:\n{scope_assessment}"
+OUT_OF_SCOPE_INPUT_TEMPLATE = "User request:\n{query}"
 CLARIFY_QUERY_INPUT_TEMPLATE = "Original query:\n{query}\n\nClarification answer:\n{clarification_answer}"
 SINGLE_QUERY_INPUT_TEMPLATE = "Original query:\n{query}"
 UNCLEAR_QUERY_INPUT_TEMPLATE = "User query:\n{query}"
@@ -88,8 +87,8 @@ Prior context summary:
 RESEARCH_NODE_INPUT_TEMPLATE = """Research request:
 {query}
 
-Research plan:
-{plan}
+Current task:
+{task}
 
 User preferences:
 {preferences}
@@ -97,7 +96,7 @@ User preferences:
 Prior context summary:
 {summary}"""
 RAG_EVIDENCE_CONTEXT = """The following evidence came from uploaded or stored documents. Treat it as source material, cite filename and page or section metadata when available, and do not assume it supports claims outside its content."""
-EOF_INPUT_TEMPLATE = """Question:
+DRAFT_RESPONSE_INPUT_TEMPLATE = """Question:
 {query}
 
 User preferences:

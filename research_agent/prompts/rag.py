@@ -1,1 +1,0 @@
-RAG_CONTEXT_LABEL = """The following evidence came from the user's uploaded or stored documents. Treat it as a source, cite its file name and page/section metadata when available, and do not assume it answers claims outside its content."""

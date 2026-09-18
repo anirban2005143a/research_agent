@@ -32,7 +32,6 @@ class ResearchGraph(ResearchNodes):
         workflow.add_node("execute_tools", self.execute_tools)
         workflow.add_node("collect_informations", self.collect_informations)
         workflow.add_node("clear_citations", self.clear_citations)
-        workflow.add_node("draft_response", self.draft_response)
         workflow.add_node("evaluate_response", self.evaluate_response)
         workflow.add_edge(START, "scope_gate")
         workflow.add_conditional_edges(
@@ -48,9 +47,12 @@ class ResearchGraph(ResearchNodes):
         )
         workflow.add_edge("plan", "research_node")
         workflow.add_edge("research_node", "execute_tools")
-        workflow.add_edge("execute_tools", "collect_informations")
-        workflow.add_edge("collect_informations", "draft_response")
-        workflow.add_edge("draft_response", "evaluate_response")
+        workflow.add_conditional_edges(
+            "execute_tools",
+            self.route_task_progress,
+            {"research_node": "research_node", "collect_informations": "collect_informations"},
+        )
+        workflow.add_edge("collect_informations", "evaluate_response")
         workflow.add_conditional_edges(
             "evaluate_response",
             self.route_evaluation,
@@ -88,6 +90,12 @@ class ResearchGraph(ResearchNodes):
             )
         except json.JSONDecodeError:
             return "clear_citations"
+
+    def route_task_progress(self, state: ResearchState):
+        """Continue with the next planned task or synthesize all collected responses."""
+        task_index = state.get("current_task_index", 0)
+        task_count = len(state.get("tasks", []))
+        return "research_node" if task_index < task_count else "collect_informations"
 
     def invoke(
         self,

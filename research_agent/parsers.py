@@ -1,3 +1,5 @@
+from enum import Enum
+
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_classic.output_parsers import OutputFixingParser
 from pydantic import BaseModel, Field
@@ -5,14 +7,18 @@ from pydantic import BaseModel, Field
 from .config import settings
 
 
-class ResearchPlan(BaseModel):
-    steps: list[str] = Field(description="Ordered research steps, each phrased as a focused question")
+class ScopeCategory(str, Enum):
+    OUT_OF_SCOPE = "out_of_scope"
+    ANSWERABLE = "answerable"
+    NEEDS_RESEARCH = "needs_research"
 
 
 class ScopeDecision(BaseModel):
-    category: str = Field(description="One of: out_of_scope, answerable, needs_research")
-    reason: str = Field(description="Brief reason for the classification")
-    response: str = Field(description="Natural response if out_of_scope; otherwise a brief acknowledgement")
+    category: ScopeCategory
+
+
+class ResearchPlan(BaseModel):
+    tasks: list[str] = Field(description="Ordered research tasks to execute one at a time")
 
 
 class ClarificationDecision(BaseModel):
@@ -36,7 +42,7 @@ class ResearchDraft(BaseModel):
     )
 
 
-def fixing_parser(model: type[BaseModel], llm):
+def llm_response_fixing_parser(model: type[BaseModel], llm):
     parser = PydanticOutputParser(pydantic_object=model)
     return OutputFixingParser.from_llm(
         parser=parser, llm=llm, max_retries=getattr(settings, "max_retries", 3)
