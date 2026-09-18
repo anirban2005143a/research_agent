@@ -258,6 +258,73 @@ Settings are loaded from `.env` by `research_agent/config.py`.
 | `RAG_CHUNK_OVERLAP` | `140` | Chunk overlap |
 | `RAG_EMBEDDING_BATCH_SIZE` | `16` | Embedding batch size |
 | `RAG_TOP_K` | `8` | Default final result count |
+
+## Session Memory And Conversation Compaction
+
+The runtime memory model is intentionally separated from graph state so long-lived user/session facts do not pollute the workflow state.
+
+### Process-level in-memory session store
+
+The project keeps a single RAM registry keyed by `session_id`:
+
+- each session has its own `ShortTermMemory` instance
+- memory is stored in `SESSION_MEMORY_STORE`
+- the store is created once per Python process and lives only in memory
+- when a session ends or a new session starts, the old entry is removed from RAM
+
+This prevents memory leakage across concurrent sessions. The `ResearchGraph` reads and writes session-scoped memory through the session key instead of storing large memory objects in the graph state.
+
+### Compact durable memory
+
+The memory payload is intentionally small and structured:
+
+- `user_info`: a short deduplicated list of durable facts about the user, such as role, preferences, domain, or constraints
+- `session_context`: a short deduplicated list of durable facts about the current research session, such as topic, unresolved questions, or important findings
+
+These are not raw transcripts and not large conversation snapshots. Instead, they are extracted from:
+
+- the latest user query via `update_from_query()`
+- the final answer via `update_from_response()`
+
+Each list is maintained with a strict cap and deduplication logic so the memory stays compact and relevant.
+
+### Graph state conversation window
+
+The graph state keeps only recent interaction history and does not store the full long-term transcript.
+
+- maximum of 5 recent user/assistant turns remain in `state["messages"]`
+- older turns are removed from the active graph state
+- the condensed older context is moved into `state["message_summary"]`
+
+The compaction rule is:
+
+1. append the newest turn to the message list
+2. if the list exceeds 5 turns, remove the oldest turns
+3. summarize those removed turns into `message_summary`
+4. keep only the latest 5 turns in `messages`
+
+This keeps the state lean while preserving the essential context needed for planning and evaluation.
+
+### Prompt integration
+
+Drafting and evaluation both receive the compact memory and summary context:
+
+- `user_info`
+- `session_context`
+- `message_summary`
+- recent conversation window
+
+This allows the model to answer with memory continuity without needing large graph-state history.
+
+### Session lifecycle behavior
+
+The Streamlit app creates a fresh session identifier and clears the old in-RAM memory when a new session begins. This guarantees that the memory for one chat does not bleed into another chat.
+
+In short, the design now follows this pattern:
+
+- short-lived graph state: only recent messages + summary
+- long-lived runtime memory: compact per-session facts in RAM only
+- session cleanup: remove the memory entry on session end
 | `RAG_CANDIDATE_MULTIPLIER` | `6` | Candidate expansion factor |
 | `HUGGINGFACEHUB_API_TOKEN1` ... `HUGGINGFACEHUB_API_TOKEN5` | empty | Hugging Face authentication and rate-limit rotation |
 | `HF_PROVIDER` | `auto` | Hugging Face provider |
