@@ -51,10 +51,10 @@ class ResponseEvaluation(BaseModel):
 
 
 class ResearchDraft(BaseModel):
-    answer: str = Field(description="Actual answer prose for the user; do not copy this description or schema instructions.")
+    answer: str = Field(description="Markdown answer text for the user.")
     citations: list[str] = Field(
         default_factory=list,
-        description="Source names, URLs, filenames, or other exact citation strings used in the answer.",
+        description="Separate source strings supporting the answer; never include them in answer.",
     )
 
 

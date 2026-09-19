@@ -143,7 +143,18 @@ def create_draft_and_select_citations(
             ).content
         )
         answer = result.answer.strip()
-        citations = list(dict.fromkeys(result.citations))[:3]
+        available_sources = {
+            str(item.get("source", "")).strip()
+            for item in sources
+            if str(item.get("source", "")).strip()
+        }
+        citations = list(
+            dict.fromkeys(
+                str(citation).strip()
+                for citation in result.citations
+                if str(citation).strip() in available_sources
+            )
+        )[:3]
     except Exception as exc:
         log(f"graph.collect_informations.draft_fallback | error={exc!r}")
         answer = str(
@@ -179,6 +190,7 @@ def merge_citations(
     draft_response: str,
 ) -> list[str]:
     """Ask the LLM to deduplicate citations and keep only those needed by the draft."""
+    allowed_citations = set(old_citations + recent_citations)
     parser = llm_response_fixing_parser(CitationMerge, llm)
     input_message = CITATION_MERGE_INPUT_TEMPLATE.format(
         draft=draft_response,
@@ -196,7 +208,13 @@ def merge_citations(
                 ],
             ).content
         )
-        return list(dict.fromkeys(result.citations))[:5]
+        return list(
+            dict.fromkeys(
+                str(citation).strip()
+                for citation in result.citations
+                if str(citation).strip() in allowed_citations
+            )
+        )[:5]
     except Exception as exc:
         log(f"graph.collect_informations.citation_merge_fallback | error={exc!r}")
         return list(dict.fromkeys(old_citations + recent_citations))[:5]

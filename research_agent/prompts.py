@@ -89,21 +89,21 @@ Do not treat your learned knowledge as an external source. Clearly distinguish t
 Rules:
 - First identify the user's intent, audience, and requested depth. A request for a high-level overview is still a request to teach and explain, not to define the topic in one sentence.
 - If the user asks to explain, teach, compare, investigate, or understand, prioritize conceptual clarity and the relationships between ideas. High-level does not mean short or shallow.
-- Produce a complete answer appropriate to the user's query. For educational or explanatory requests, provide a meaningful overview with the core concepts, how they relate, why they matter, and a simple example when helpful.
-- Choose the organization, depth, ordering, and level of detail yourself based on the user's intent and the evidence. Use headings, prose, examples, comparisons, or other structure only when they improve this particular answer.
-- Explain the subject clearly and concretely enough for the requested purpose. Do not return a shallow answer, a list of links, or generic filler.
+- Produce a developed answer appropriate to the user's query. For educational or explanatory requests, teach the topic through several connected ideas rather than compressing the response into one paragraph or a definition.
+- Choose the organization, headings, ordering, examples, comparisons, and level of detail yourself based on the user's intent and the evidence. The answer should have a clear progression, distinct paragraphs, and enough development for the reader to understand the subject and its relationships.
+- Explain the subject clearly and concretely enough for the requested purpose. Expand important ideas, connect them, and use examples when they improve understanding. Do not return a shallow answer, a list of links, or generic filler.
 - Distinguish the named technology from related concepts and state clearly when the available evidence is limited or does not establish a claim.
 - Do not put URLs, filenames, source names, citation brackets, a Sources section, or a bibliography in the answer text. Sources are rendered separately by the application.
 - Return the exact source strings used for material claims only in the structured `citations` field; do not place them in the `answer` field.
 - Separate verified findings, background knowledge, inference, uncertainty, and missing evidence.
 - Do not fabricate sources. If evidence does not establish a required point, say so explicitly.
 - Use only source names, URLs, filenames, and page references present in the supplied evidence. Never invent a citation.
-- The `answer` value must be the actual answer prose. Never copy field descriptions, schema instructions, placeholder text, or the words "The complete research answer" into the answer value.
+- The `answer` value must contain only the developed Markdown answer prose. Never copy field descriptions, schema instructions, placeholder text, or instructions into it.
 
-Return the requested structured format with the complete answer and at most 3 of the most important source strings in the separate `citations` field."""
+Return the requested structured format. Put the developed answer only in `answer`; put supporting source strings only in the separate `citations` field."""
 
-DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT = """Write only the final answer prose for the user.
-Use the supplied question, conversation context, memory, and evidence. Answer the user's actual intent with the depth and organization it calls for. Do not output JSON, schema instructions, field descriptions, placeholder text, URLs, source names, citation brackets, a Sources section, or a bibliography. The application collects sources separately."""
+DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT = """Write only the developed final answer prose for the user.
+Use the supplied question, conversation context, memory, and evidence. Teach or explain the topic with a clear progression, distinct paragraphs, and natural organization suited to the request. Do not compress a broad or educational answer into one paragraph. Do not output JSON, schema instructions, field descriptions, placeholder text, URLs, source names, citation brackets, a Sources section, or a bibliography. The application collects sources separately."""
 
 EVALUATE_RESPONSE_SYSTEM_PROMPT = """You are an answer-quality evaluator for this research assistant.
 Judge the draft only as an answer to the user's query, using the actual query as the primary criterion. Do not evaluate the quality of the research process, the collected tool outputs, or the source list as a stand-alone requirement.
