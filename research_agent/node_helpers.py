@@ -118,11 +118,13 @@ def create_draft_and_select_citations(
     context = "\n\n--- EVIDENCE ---\n".join(evidence_blocks)
     memory = session_context
     message_summary = state.get("message_summary", "")
+    evaluation = state.get("evaluation") or "No prior evaluation is available."
     recent_context = state.get("messages", [])
     input_message = (
         f"{RAG_EVIDENCE_CONTEXT}\n\n"
         f"{DRAFT_RESPONSE_INPUT_TEMPLATE.format(
             query=state['query'],
+            evaluation=evaluation,
             user_info=memory.get('user_info', []),
             session_context=memory.get('session_context', []),
             message_summary=message_summary,
@@ -165,8 +167,8 @@ def create_draft_and_select_citations(
                     SystemMessage(content=DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT),
                     HumanMessage(
                         content=(
-                            f"Question and research context:\n{input_message}\n\n"
-                            "Write the actual answer now."
+                            f"{input_message}\n\n"
+                            "Write the actual answer now. Return prose only."
                         )
                     ),
                 ],
@@ -181,7 +183,6 @@ def create_draft_and_select_citations(
         )[:5]
     log(f"graph.collect_informations.completed | response_chars={len(str(answer))} | citation_count={len(citations)}")
     return str(answer), citations
-
 
 def merge_citations(
     llm: Any,

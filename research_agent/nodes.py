@@ -24,6 +24,7 @@ from .prompts import (
     PLANNING_SYSTEM_PROMPT,
     EXECUTE_TASK_INPUT_TEMPLATE,
     EXECUTE_TASK_SYSTEM_PROMPT,
+    EVALUATION_INPUT_TEMPLATE,
     SCOPE_GATE_SYSTEM_PROMPT,
     SINGLE_QUERY_INPUT_TEMPLATE,
     UNCLEAR_QUERY_INPUT_TEMPLATE,
@@ -240,6 +241,11 @@ class ResearchNodes:
         task = tasks[task_index] if task_index < len(tasks) else state["query"]
         memory = self.session_memory.context()
         message_summary = state.get("message_summary", "")
+        try:
+            stored_files = self.document_handler.list_files() if self.document_handler else []
+        except Exception as exc:
+            log(f"graph.execute_task.stored_files_unavailable | error={exc!r}")
+            stored_files = []
         input_message = EXECUTE_TASK_INPUT_TEMPLATE.format(
             query=state["query"],
             task=task,
@@ -247,15 +253,7 @@ class ResearchNodes:
             session_context=memory.get("session_context", []),
             message_summary=message_summary,
             recent_conversation=format_recent_messages(state.get("messages", [])),
-        )
-        try:
-            stored_files = self.document_handler.list_files() if self.document_handler else []
-        except Exception as exc:
-            log(f"graph.execute_task.stored_files_unavailable | error={exc!r}")
-            stored_files = []
-        input_message += (
-            "\n\nStored documents available in this session:\n"
-            + ("\n".join(f"- {file_name}" for file_name in stored_files) or "None")
+            stored_documents="\n".join(f"- {file_name}" for file_name in stored_files) or "None",
         )
         available_tools = "\n".join(
             f"- {tool.name}: {tool.description or 'No description provided.'}"
@@ -272,11 +270,6 @@ class ResearchNodes:
                 )
             ),
         ]
-        messages.extend(
-            message
-            for message in state.get("messages", [])
-            if isinstance(message, (HumanMessage, SystemMessage, AIMessage))
-        )
         try:
             selection_response = invoke_llm(self.llm, "execute_task_llm", messages)
             raw_selection = getattr(selection_response, "content", selection_response)
@@ -435,13 +428,13 @@ class ResearchNodes:
         parser = llm_response_fixing_parser(ResponseEvaluation, self.llm)
         memory = self.session_memory.context()
         message_summary = state.get("message_summary", "")
-        input_message = (
-            f"Question:\n{state['query']}\n\n"
-            f"Answer:\n{state.get('draft_response', '')}\n\n"
-            f"User info: {memory.get('user_info', [])}\n"
-            f"Session context: {memory.get('session_context', [])}\n"
-            f"Older summarized context: {message_summary}\n"
-            f"Recent conversation: {format_recent_messages(state.get('messages', []))}"
+        input_message = EVALUATION_INPUT_TEMPLATE.format(
+            query=state["query"],
+            draft=state.get("draft_response", ""),
+            user_info=memory.get("user_info", []),
+            session_context=memory.get("session_context", []),
+            message_summary=message_summary,
+            recent_conversation=format_recent_messages(state.get("messages", [])),
         )
         try:
             review = parser.parse(
