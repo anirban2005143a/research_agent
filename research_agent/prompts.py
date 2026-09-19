@@ -56,7 +56,7 @@ This is a research plan, not an answer-length optimization plan and not a minima
 Ask: What information do I need to collect to answer the user's query correctly and usefully? What concepts need to be understood? What should be researched first, and what should come next? Which sources or tools are appropriate for each step?
 If there is no draft or evaluation yet, create the initial plan. If a draft and evaluation exist, plan only the additional research required to fix the answer's specific gaps and improve the draft.
 The goal is enough research and organization to produce a high-quality answer, not the smallest possible plan or the shortest final response. A teaching or overview request may require multiple conceptual steps, including definitions, mechanisms, examples, limitations, and organization.
-Create an ordered plan that reflects the actual information flow when order matters. Use as many precise tool-oriented steps as needed to answer the query well. Do not invent a hard maximum unless the previous state already establishes one; do not artificially shorten the plan just because the request is broad or explanatory.
+Create an ordered plan with no more than 5 complementary research tasks. Combine related work into one task instead of creating separate tasks for definition, mechanisms, workflow, examples, limitations, source discovery, and answer organization. The final task should gather missing evidence, not merely rewrite or organize the answer.
 Keep every step focused, concrete, and answerable with the available tools and evidence sources. For named tools, libraries, projects, or systems, include official documentation or canonical sources, the mechanism or workflow, and practical limitations when relevant.
 Prefer primary and authoritative sources. Return only the requested structured format."""
 
@@ -65,6 +65,7 @@ Use the current research task to select the necessary tools for this one task. T
 
 Tool selection rules:
 - Use rag_search for uploaded or stored local documents.
+- If stored/uploaded documents are available and relevant to the research request, call rag_search as part of the evidence search. Do not ignore local evidence in favor of web sources.
 - Use read_stored_file only after a relevant file is identified.
 - Use web_search for current facts, recent events, policy updates, or broad external evidence.
 - Use wikipedia_search for background, definitions, and historical context.
@@ -89,19 +90,20 @@ Rules:
 - First identify the user's intent, audience, and requested depth. A request for a high-level overview is still a request to teach and explain, not to define the topic in one sentence.
 - If the user asks to explain, teach, compare, investigate, or understand, prioritize conceptual clarity and the relationships between ideas. High-level does not mean short or shallow.
 - Produce a complete answer appropriate to the user's query. For educational or explanatory requests, provide a meaningful overview with the core concepts, how they relate, why they matter, and a simple example when helpful.
-- For a teaching or high-level overview request, organize the answer with clear sections covering: what the topic is, how it works, the main concepts or workflow, a concrete example, and important limitations or distinctions. Omit a section only when it genuinely does not apply.
-- Explain the mechanism progressively and concretely: define the subject, describe its inputs and outputs, walk through the workflow step by step, identify the important components, and connect the components to the user's question.
-- Include one small illustrative example when it helps understanding, but do not invent implementation details as verified facts.
-- Each section must contain explanatory prose. Do not return a one-line definition, a shallow paragraph, a list of links, or generic filler.
+- Choose the organization, depth, ordering, and level of detail yourself based on the user's intent and the evidence. Use headings, prose, examples, comparisons, or other structure only when they improve this particular answer.
+- Explain the subject clearly and concretely enough for the requested purpose. Do not return a shallow answer, a list of links, or generic filler.
 - Distinguish the named technology from related concepts and state clearly when the available evidence is limited or does not establish a claim.
 - Do not put URLs, filenames, source names, citation brackets, a Sources section, or a bibliography in the answer text. Sources are rendered separately by the application.
 - Return the exact source strings used for material claims only in the structured `citations` field; do not place them in the `answer` field.
 - Separate verified findings, background knowledge, inference, uncertainty, and missing evidence.
 - Do not fabricate sources. If evidence does not establish a required point, say so explicitly.
 - Use only source names, URLs, filenames, and page references present in the supplied evidence. Never invent a citation.
-- Never use a field description, schema description, parser instruction, or placeholder as the answer. The answer field must contain the actual researched explanation.
+- The `answer` value must be the actual answer prose. Never copy field descriptions, schema instructions, placeholder text, or the words "The complete research answer" into the answer value.
 
 Return the requested structured format with the complete answer and at most 3 of the most important source strings in the separate `citations` field."""
+
+DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT = """Write only the final answer prose for the user.
+Use the supplied question, conversation context, memory, and evidence. Answer the user's actual intent with the depth and organization it calls for. Do not output JSON, schema instructions, field descriptions, placeholder text, URLs, source names, citation brackets, a Sources section, or a bibliography. The application collects sources separately."""
 
 EVALUATE_RESPONSE_SYSTEM_PROMPT = """You are an answer-quality evaluator for this research assistant.
 Judge the draft only as an answer to the user's query, using the actual query as the primary criterion. Do not evaluate the quality of the research process, the collected tool outputs, or the source list as a stand-alone requirement.
@@ -117,8 +119,8 @@ Evaluate whether the answer actually answers the user's question and satisfies t
 - Is the answer technically coherent, useful, and appropriate to the user's request?
 - Does it remain focused on answering the user's question rather than adding source lists or citation text?
 
-A short answer may be factually correct but still be a poor answer if it does not teach or explain enough. For example, a one-sentence definition of Clang taint analysis can be factually plausible but still fail a 'teach me at a high level' request because it omits the essential concepts, flow, and explanation.
-Do not enforce arbitrary word-count or character-count rules. Judge quality semantically. If the draft does not sufficiently teach/explain the requested topic, or leaves major gaps that prevent understanding, set needs_improvement to true and list the specific missing conceptual improvements.
+A short answer may be factually correct but still be a poor answer if it does not satisfy the user's requested purpose. Judge whether the draft is sufficiently useful, coherent, and complete for this particular query.
+Do not enforce arbitrary word-count or character-count rules. Judge quality semantically. If the draft does not sufficiently answer the requested topic or leaves major gaps, set needs_improvement to true and list the specific missing improvements.
 When the draft is a good answer for the current query, set needs_improvement to false and improvement_scopes to an empty list.
 Return only the requested structured format."""
 

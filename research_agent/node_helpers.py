@@ -12,26 +12,12 @@ from .prompts import (
     CITATION_MERGE_INPUT_TEMPLATE,
     CITATION_MERGE_SYSTEM_PROMPT,
     DRAFT_RESPONSE_INPUT_TEMPLATE,
+    DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT,
     DRAFT_RESPONSE_SYSTEM_PROMPT,
     MESSAGE_SUMMARY_SYSTEM_PROMPT,
     RAG_EVIDENCE_CONTEXT,
 )
 from .utils import log, retry_call
-
-
-def _draft_needs_repair(answer: str, query: str) -> bool:
-    """Reject parser-description output and clearly insufficient teaching drafts."""
-    normalized_answer = " ".join(answer.lower().split())
-    if normalized_answer in {
-        "the complete research answer with inline citations where appropriate.",
-        "the complete research answer with inline citations where appropriate",
-    }:
-        return True
-    educational_request = any(
-        phrase in query.lower()
-        for phrase in ("teach me", "high level", "high-level", "explain", "overview", "understand")
-    )
-    return educational_request and len(answer.split()) < 80
 
 
 def normalize_tool_arguments(tool_name: str, arguments: dict) -> dict:
@@ -158,8 +144,6 @@ def create_draft_and_select_citations(
         )
         answer = result.answer.strip()
         citations = list(dict.fromkeys(result.citations))[:3]
-        if _draft_needs_repair(answer, state["query"]):
-            raise ValueError("Draft did not contain a complete explanatory answer")
     except Exception as exc:
         log(f"graph.collect_informations.draft_fallback | error={exc!r}")
         answer = str(
@@ -167,14 +151,11 @@ def create_draft_and_select_citations(
                 llm,
                 "draft_response_llm_fallback",
                 [
-                    SystemMessage(content=DRAFT_RESPONSE_SYSTEM_PROMPT),
+                    SystemMessage(content=DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT),
                     HumanMessage(
                         content=(
-                            f"{input_message}\n\n"
-                            "The structured draft was invalid or too shallow. Write the actual complete answer now. "
-                            "For an educational overview, explain the topic in organized sections covering what it is, "
-                            "how it works, the main concepts, an example, and limitations. Do not output schema text, "
-                            "field descriptions, or a one-sentence definition."
+                            f"Question and research context:\n{input_message}\n\n"
+                            "Write the actual answer now."
                         )
                     ),
                 ],

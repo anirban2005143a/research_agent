@@ -25,6 +25,7 @@ class ResearchGraph(ResearchNodes):
     ):
         self.llm = llm or build_llm()
         self.session_id = session_id or "default"
+        self.document_handler = document_handler or getattr(rag, "document_handler", None)
         if session_memory is not None:
             self.session_memory = session_memory
         else:

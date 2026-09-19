@@ -72,7 +72,7 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
 
     @tool("rag_search", args_schema=QueryInput)
     def rag_search(query: str) -> dict[str, Any]:
-        """Use when the question likely depends on uploaded or stored local documents. Search the indexed document corpus for matching evidence and return the strongest chunks with citations."""
+        """Search the user's uploaded or stored documents using hybrid retrieval. Use this when the request refers to local files, uploaded evidence, or a topic that may be covered by the session's stored documents. It searches document contents and returns matching evidence with source and page citations. Do not use it for general web-only research when no relevant stored documents exist."""
         log(f"tool.rag_search.started | query={query!r}")
         matches = retry_call(
             lambda: rag.retrieve(query, k=getattr(settings, "rag_top_k", 8)),

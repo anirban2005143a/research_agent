@@ -248,6 +248,15 @@ class ResearchNodes:
             message_summary=message_summary,
             recent_conversation=format_recent_messages(state.get("messages", [])),
         )
+        try:
+            stored_files = self.document_handler.list_files() if self.document_handler else []
+        except Exception as exc:
+            log(f"graph.execute_task.stored_files_unavailable | error={exc!r}")
+            stored_files = []
+        input_message += (
+            "\n\nStored documents available in this session:\n"
+            + ("\n".join(f"- {file_name}" for file_name in stored_files) or "None")
+        )
         available_tools = "\n".join(
             f"- {tool.name}: {tool.description or 'No description provided.'}"
             for tool in self.tools
