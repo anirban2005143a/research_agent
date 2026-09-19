@@ -42,6 +42,25 @@ def test_recent_graph_messages_roll_over_to_message_summary():
     assert state["messages"][0]["content"] == "turn-1-user"
 
 
+def test_graph_node_logs_include_scope_and_active_task(capsys):
+    graph = DummyResearchNodes()
+
+    graph.clean_state(
+        {
+            "query": "research retrieval",
+            "tasks": ["compare dense and lexical retrieval"],
+            "current_task_index": 0,
+        }
+    )
+
+    output = capsys.readouterr().out
+    assert "graph.clean_state.started" in output
+    assert "graph.clean_state.completed" in output
+    assert "task_number=1" in output
+    assert "task_total=1" in output
+    assert "task='compare dense and lexical retrieval'" in output
+
+
 def test_planner_and_evaluator_prompts_are_query_centric_and_semantic():
     planner_text = prompts.PLANNING_SYSTEM_PROMPT.lower()
     evaluator_text = prompts.EVALUATE_RESPONSE_SYSTEM_PROMPT.lower()

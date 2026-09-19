@@ -31,5 +31,5 @@ class OverallRanker:
 
         candidates.sort(key=lambda item: item.final_score, reverse=True)
         selected = candidates[:limit]
-        log(f"rag.final_ranking.completed | selected_count={len(selected)}")
+        log(f"rag.final_ranking.results_selected | candidate_count={len(candidates)} | selected_count={len(selected)}")
         return SearchResults(results=selected)

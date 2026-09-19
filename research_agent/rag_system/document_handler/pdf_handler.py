@@ -94,7 +94,7 @@ class PDFDocumentHandler(DocumentHandler):
         and recursively split only sections exceeding max_chars.
         """
 
-        log(f"rag.document.reading | source={path.name}")
+        log(f"rag.pdf.loading_started | source={path.name}")
 
         # ---------------------------------------------------------
         # 1. PDF metadata

@@ -14,7 +14,7 @@ _CROSS_ENCODER_MODEL_ID = getattr(
 _CROSS_ENCODER_LOCAL_ONLY = getattr(settings, "rag_cross_encoder_local_files_only", False)
 _CROSS_ENCODER_CACHE_DIR = getattr(settings, "rag_cross_encoder_cache_dir", ".models")
 
-log(f"rag.cross_encoder.loading | model_id={_CROSS_ENCODER_MODEL_ID}")
+log(f"rag.cross_encoder.model_loading | model_id={_CROSS_ENCODER_MODEL_ID}")
 _CROSS_ENCODER_MODEL = CrossEncoder(
     model_name_or_path=_CROSS_ENCODER_MODEL_ID,
     cache_folder=_CROSS_ENCODER_CACHE_DIR,
@@ -39,7 +39,7 @@ class CrossEncoderRanker:
             return []
 
         if not getattr(settings, "rag_cross_encoder_enabled", True):
-            log("rag.cross_encoder.disabled | reason=configuration")
+            log("rag.cross_encoder.skipped | reason=disabled_by_configuration")
             return candidates
 
         model = self._load_model()
@@ -54,5 +54,5 @@ class CrossEncoderRanker:
             candidate.cross_encoder_score = value
             candidate.cross_encoder_normalized = 1.0 / (1.0 + math.exp(-value))
 
-        log(f"rag.cross_encoder.completed | candidate_count={len(candidates)}")
+        log(f"rag.cross_encoder.reranking_completed | candidate_count={len(candidates)}")
         return candidates

@@ -42,7 +42,7 @@ class LLMModule(Runnable):
 
     def invoke(self, input, config=None, **kwargs):
         delay_seconds = getattr(settings, "llm_call_delay_seconds", 20)
-        log(f"llm.throttle | delay_seconds={delay_seconds}")
+        log(f"llm.request.waiting_for_rate_limit | delay_seconds={delay_seconds}")
         time.sleep(delay_seconds)
         model = self._build_model(self._next_token())
         return model.invoke(input, config=config, **kwargs)

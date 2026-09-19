@@ -45,10 +45,10 @@ class DocumentHandler:
         destination = self.storage_dir / original_path.name
         if destination.exists():
             destination.unlink()
-            log(f"rag.files.replaced | source={destination.name}")
+            log(f"rag.files.previous_copy_deleted | source={destination.name}")
 
         destination.write_bytes(file_contents)
-        log(f"rag.files.saved | source={destination.name}")
+        log(f"rag.files.upload_saved | source={destination.name}")
         return destination
 
     def remove_file(self, stored_file_path: str | Path) -> bool:
@@ -59,7 +59,7 @@ class DocumentHandler:
             return False
 
         destination.unlink()
-        log(f"rag.files.removed | source={destination.name}")
+        log(f"rag.files.deleted | source={destination.name}")
         return True
 
     def file_exists(self, stored_file_path: str | Path) -> bool:
@@ -128,13 +128,13 @@ class DocumentHandler:
         for chunk in chunks:
             chunk.page_content = _clean_text(chunk.page_content)
 
-        log(f"rag.chunking.completed | source={source_name} | chunk_count={len(chunks)}")
+        log(f"rag.chunking.chunks_created | source={source_name} | chunk_count={len(chunks)}")
         return [chunk for chunk in chunks if chunk.page_content]
 
     def prepare_document(self, document_path: Path) -> list[Document]:
         """Load one document, clean its content, and prepare chunked output for indexing."""
         source_name = document_path.name
-        log(f"rag.document.reading | source={source_name}")
+        log(f"rag.document.loading_started | source={source_name}")
 
         source_documents = self.load_document(document_path)
         prepared_documents: list[Document] = []

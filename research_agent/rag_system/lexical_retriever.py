@@ -24,11 +24,11 @@ class LexicalRetriever:
         self.document_count = len(documents)
         if not documents:
             self.retriever = None
-            log("rag.bm25.empty | document_count=0")
+            log("rag.bm25.index_empty | document_count=0")
             return
 
         self.retriever = BM25Retriever.from_documents(documents, k=candidate_count)
-        log(f"rag.bm25.ready | chunk_count={len(documents)}")
+        log(f"rag.bm25.index_rebuilt | chunk_count={len(documents)} | candidate_count={candidate_count}")
 
     def search(self, query: str, limit: int) -> list[RetrievedChunk]:
         if self.retriever is None:

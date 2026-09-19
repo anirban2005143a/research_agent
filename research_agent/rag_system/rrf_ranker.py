@@ -38,7 +38,7 @@ class RRFRanker:
 
         ranked = ranked[:limit]
         log(
-            f"rag.rrf.completed | dense_count={len(dense_results)} "
+            f"rag.rrf.fusion_completed | dense_count={len(dense_results)} "
             f"| lexical_count={len(lexical_results)} | fused_count={len(ranked)}"
         )
         return ranked

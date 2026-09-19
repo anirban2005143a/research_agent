@@ -1,6 +1,7 @@
 """Clean orchestration layer for the research-document RAG pipeline."""
 
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from pathlib import Path
 from typing import Callable
 
@@ -61,18 +62,18 @@ class HybridRAG:
 
         if path.resolve() != session_path.resolve():
             if session_path.exists():
-                log(f"rag.index.replacing_session_copy | source={source}")
+                log(f"rag.index.previous_session_copy_removed | source={source}")
                 self.document_handler.remove_file(source)
             self.document_handler.save_upload(source, path.read_bytes())
             path = session_path
 
         if self.dense_retriever.has_file(source):
-            log(f"rag.index.replacing_vector_entries | source={source}")
+            log(f"rag.index.previous_vector_entries_removed | source={source}")
             self.dense_retriever.delete_file(source)
 
         chunks = self.document_handler.process_input_file(path)
         if not chunks:
-            log(f"rag.index.empty_document | source={source}")
+            log(f"rag.index.no_chunks_created | source={source}")
             return 0
 
         batch_size = max(1, getattr(settings, "rag_embedding_batch_size", 16))
@@ -84,7 +85,7 @@ class HybridRAG:
 
         # BM25 is rebuilt only after ingestion, never for every query.
         self._rebuild_lexical_index()
-        log(f"rag.index.completed | source={source} | chunk_count={len(chunks)}")
+        log(f"rag.index.document_indexed | source={source} | chunk_count={len(chunks)}")
         return len(chunks)
 
     def retrieve(self, query: str, k: int = getattr(settings, "rag_top_k", 8)) -> SearchResults:
@@ -96,16 +97,26 @@ class HybridRAG:
         final_k = k 
         candidate_count = max(final_k * getattr(settings, "rag_candidate_multiplier", 6), final_k)
 
-        log(f"rag.retrieve.started | query={query!r} | candidate_count={candidate_count}")
+        log(f"rag.retrieve.request_started | query={query!r} | candidate_count={candidate_count}")
 
         with ThreadPoolExecutor(max_workers=2) as executor:
-            dense_future = executor.submit(self.dense_retriever.search, query, candidate_count)
-            lexical_future = executor.submit(self.lexical_retriever.search, query, candidate_count)
+            dense_future = executor.submit(
+                copy_context().run,
+                self.dense_retriever.search,
+                query,
+                candidate_count,
+            )
+            lexical_future = executor.submit(
+                copy_context().run,
+                self.lexical_retriever.search,
+                query,
+                candidate_count,
+            )
             dense_results = dense_future.result()
             lexical_results = lexical_future.result()
 
         log(
-            f"rag.retrieve.candidates | dense_count={len(dense_results)} "
+            f"rag.retrieve.candidates_collected | dense_count={len(dense_results)} "
             f"| lexical_count={len(lexical_results)}"
         )
 
@@ -117,4 +128,5 @@ class HybridRAG:
         reranked = self.cross_encoder_ranker.rank(query, fused)
         final_results: SearchResults = self.overall_ranker.rank(reranked, final_k)
 
+        log(f"rag.retrieve.completed | result_count={len(final_results.results)}")
         return final_results

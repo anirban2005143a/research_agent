@@ -68,7 +68,7 @@ def append_recent_conversation_turn(
                     ).content
                 ).strip()
             except Exception as exc:
-                log(f"graph.message_summary.fallback | error={exc!r}")
+                log(f"conversation_summary.generation_failed_using_archived_text | error={exc!r}")
                 summary = "\n".join(
                     part for part in [summary, removed_text] if part
                 ).strip()
@@ -226,5 +226,5 @@ def tool_content_to_records(raw_content: Any, source_hint: str) -> list[dict[str
 def invoke_llm(llm: Any, label: str, messages: list[BaseMessage], model: Any = None) -> Any:
     """Invoke an LLM with the shared retry policy and completion logging."""
     response = retry_call(lambda: (model or llm).invoke(messages), label)
-    log(f"llm.completed | name={label} | response_chars={len(str(getattr(response, 'content', response)))}")
+    log(f"llm.request.completed | operation={label} | response_chars={len(str(getattr(response, 'content', response)))}")
     return response

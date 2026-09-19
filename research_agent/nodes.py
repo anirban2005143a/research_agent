@@ -66,7 +66,7 @@ class ResearchNodes:
             category = decision.category
             return {"scope_category": category.value}
         except Exception as exc:
-            log(f"graph.scope_gate.fallback | action=research | error={exc!r}")
+            log(f"scope_classification.failed_using_in_scope | selected_scope=in_scope | error={exc!r}")
             return {"scope_category": ScopeCategory.IN_SCOPE.value}
 
     @log_function
@@ -123,7 +123,7 @@ class ResearchNodes:
                 )
                 final_query = decision.final_query.strip() or f"{query} {hitl_answer}"
             except Exception as exc:
-                log(f"graph.clarify_query.final_query_fallback | error={exc!r}")
+                log(f"clarified_query.generation_failed_using_original_and_answer | error={exc!r}")
                 final_query = f"{query} Additional context: {hitl_answer}"
             return {
                 "query": final_query,
@@ -149,7 +149,7 @@ class ResearchNodes:
                 ).content
             )
         except Exception as exc:
-            log(f"graph.clarify_query.decision_fallback | error={exc!r}")
+            log(f"clarification_decision.failed_using_original_query | error={exc!r}")
             decision = ClarificationDecision(
                 needs_clarification=False,
                 question="",
@@ -221,12 +221,12 @@ class ResearchNodes:
             tasks = [task.strip() for task in plan.tasks if task and task.strip()][:5]
             if not tasks:
                 tasks = [state["query"]]
-            log(f"graph.plan.created | task_count={len(tasks)}")
+            log(f"research_plan.created | task_count={len(tasks)}")
             for index, task in enumerate(tasks, start=1):
-                log(f"graph.plan.task | index={index} | task={task!r}")
+                log(f"research_plan.task_created | task_number={index} | task={task!r}")
             return {"tasks": tasks, "current_task_index": 0, "tool_messages": []}
         except Exception as exc:
-            log(f"graph.plan.fallback | action=original_query | error={exc!r}")
+            log(f"research_plan.generation_failed_using_original_query | error={exc!r}")
             return {
                 "tasks": [state["query"]],
                 "current_task_index": 0,
@@ -244,7 +244,7 @@ class ResearchNodes:
         try:
             stored_files = self.document_handler.list_files() if self.document_handler else []
         except Exception as exc:
-            log(f"graph.execute_task.stored_files_unavailable | error={exc!r}")
+            log(f"stored_documents.list_failed_continuing_without_file_names | error={exc!r}")
             stored_files = []
         input_message = EXECUTE_TASK_INPUT_TEMPLATE.format(
             query=state["query"],
@@ -296,12 +296,12 @@ class ResearchNodes:
                 if call.name in available_tool_names
             ]
         except Exception as exc:
-            log(f"graph.execute_task.tool_selection_fallback | error={exc!r}")
+            log(f"tool_selection.failed_continuing_without_tool_calls | error={exc!r}")
             tool_calls = []
-        log(f"graph.execute_task.tool_calls | count={len(tool_calls)}")
+        log(f"tool_selection.completed | selected_tool_count={len(tool_calls)}")
         for call in tool_calls:
             log(
-                f"graph.execute_task.tool_selected | name={call.get('name')} | args={call.get('args')}"
+                f"tool_selection.tool_selected | tool_name={call.get('name')} | arguments={call.get('args')}"
             )
 
         tools_by_name = {tool.name: tool for tool in self.tools}
@@ -322,7 +322,7 @@ class ResearchNodes:
                 tool_records.extend(tool_content_to_records(content, source_hint))
             except Exception as exc:
                 log(
-                    f"graph.execute_task.tool_failed | name={tool_name}"
+                    f"tool_execution.failed | tool_name={tool_name}"
                     f" | error={exc!r}"
                 )
                 continue
@@ -348,7 +348,7 @@ class ResearchNodes:
             if source:
                 source_names.append(source)
         log(
-            f"graph.sources.collected | source_count={len(source_names)} | content_count={len(content_blocks)}"
+            f"research_material.collected | source_count={len(source_names)} | content_block_count={len(content_blocks)}"
         )
         draft = generate_draft_response(
             self.llm,
@@ -400,11 +400,11 @@ class ResearchNodes:
         try:
             self.session_memory.update_from_query(state.get("query", ""), self.llm)
         except Exception as exc:
-            log(f"graph.finalize_response.query_memory_failed | error={exc!r}")
+            log(f"session_memory.query_update_failed | error={exc!r}")
         try:
             self.session_memory.update_from_response(final_response, self.llm)
         except Exception as exc:
-            log(f"graph.finalize_response.response_memory_failed | error={exc!r}")
+            log(f"session_memory.response_update_failed | error={exc!r}")
 
         updated_state = {
             **state,
@@ -425,7 +425,7 @@ class ResearchNodes:
                 self.llm,
             )
         except Exception as exc:
-            log(f"graph.finalize_response.summary_failed | error={exc!r}")
+            log(f"conversation_summary.update_failed_using_current_turn | error={exc!r}")
             updated_state["messages"] = list(updated_state.get("messages", []))[-8:] + [
                 {"role": "user", "content": state.get("query", "")},
                 {"role": "assistant", "content": final_response},
@@ -460,7 +460,8 @@ class ResearchNodes:
                 ).content
             )
             log(
-                f"graph.evaluate_response.completed | improvement_scope_count={len(review.improvement_scopes)}"
+                f"response_evaluation.completed | needs_improvement={review.needs_improvement}"
+                f" | improvement_scope_count={len(review.improvement_scopes)}"
             )
             return {
                 "evaluation": review.model_dump(),

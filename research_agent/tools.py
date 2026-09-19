@@ -26,7 +26,7 @@ class FileInput(BaseModel):
 
 
 def _web_search(query: str) -> str:
-    log(f"tool.web_search.started | query={query!r}")
+    log(f"tool.web_search.request_started | query={query!r}")
     search_tool = DuckDuckGoSearchResults(
         num_results=5,
         output_format="json",
@@ -34,7 +34,9 @@ def _web_search(query: str) -> str:
     )
     results = retry_call(lambda: search_tool.invoke(query), "tool.web_search")
     if not results:
+        log("tool.web_search.no_results | message=external_search_returned_no_sources")
         return "No web sources found. The available external knowledge may not cover this query."
+    log("tool.web_search.results_received")
     return str(results)
 
 
@@ -73,13 +75,13 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
     @tool("rag_search", args_schema=QueryInput)
     def rag_search(query: str) -> dict[str, Any]:
         """Search the user's uploaded or stored documents using hybrid retrieval. Use this when the request refers to local files, uploaded evidence, or a topic that may be covered by the session's stored documents. It searches document contents and returns matching evidence with source and page citations. Do not use it for general web-only research when no relevant stored documents exist."""
-        log(f"tool.rag_search.started | query={query!r}")
+        log(f"tool.rag_search.request_started | query={query!r}")
         matches = retry_call(
             lambda: rag.retrieve(query, k=getattr(settings, "rag_top_k", 8)),
             "tool.rag_search",
         )
         result_records = _rag_search_results_to_records(matches)
-        log(f"tool.completed | name=rag_search | matches={len(result_records)}")
+        log(f"tool.rag_search.results_received | match_count={len(result_records)}")
         return {
             "result_type": "rag_search_results",
             "results": result_records,
@@ -91,13 +93,13 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
     @tool("read_stored_file", args_schema=FileInput)
     def read_stored_file(source_name: str, query: str = "") -> str:
         """Read one specific document uploaded by the user from the session document store. Use this when the user names a file or asks to summarize, inspect, verify, or extract information from a particular uploaded document. Do not use it for web or Wikipedia content, and do not use it when no exact stored filename is known."""
-        log(f"tool.read_stored_file.started | source={source_name!r} | query={query!r}")
+        log(f"tool.read_stored_file.request_started | source={source_name!r} | query={query!r}")
         return retry_call(lambda: document_handler.read_stored_file(source_name), "tool.read_stored_file")
 
     @tool("list_stored_files")
     def list_stored_files() -> list[str]:
         """List the files uploaded by the user and stored in the current research session. Use this before read_stored_file when the user refers to an uploaded document without giving its exact filename, or asks what documents are available. This does not search document contents."""
-        log("tool.list_stored_files.started")
+        log("tool.list_stored_files.request_started")
         return retry_call(document_handler.list_files, "tool.list_stored_files")
 
     wikipedia.set_user_agent("ResearchAgentApp/1.0 (anirban@example.com)")
@@ -111,26 +113,26 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
     @tool("wikipedia_search", args_schema=QueryInput)
     def wikipedia_search(query: str) -> str:
         """Use for concise background, definitions, historical context, or neutral overview material. Prefer more authoritative sources for technical or disputed claims."""
-        log(f"tool.wikipedia_search.started | query={query!r}")
+        log(f"tool.wikipedia_search.request_started | query={query!r}")
         try:
             try:
                 result = wikipedia_tool.invoke(query)
             except json.JSONDecodeError as exc:
-                log(f"tool.wikipedia_search.unavailable | error={exc!r}")
+                log(f"tool.wikipedia_search.invalid_upstream_response | error={exc!r}")
                 return "Wikipedia search unavailable: the upstream response was not valid JSON."
             except Exception:
                 result = retry_call(
                     lambda: wikipedia_tool.invoke(query), "tool.wikipedia_search"
                 )
         except Exception as exc:
-            log(f"tool.wikipedia_search.unavailable | error={exc!r}")
+            log(f"tool.wikipedia_search.request_failed | error={exc!r}")
             return f"Wikipedia search unavailable for this query: {exc}"
         return str(result) or "Wikipedia returned no results for this query."
 
     @tool("arxiv_search", args_schema=QueryInput)
     def arxiv_search(query: str) -> str:
         """Use for academic papers, system design details, implementation behavior, algorithms, and technical literature. Best for research questions that require formal or peer-reviewed technical evidence."""
-        log(f"tool.arxiv_search.started | query={query!r}")
+        log(f"tool.arxiv_search.request_started | query={query!r}")
         return retry_call(lambda: _arxiv_search(query), "tool.arxiv_search")
 
     return [
@@ -159,7 +161,7 @@ def _rag_search_results_to_records(search_results: SearchResults | Any) -> list[
             results = getattr(search_results, "matches", None)
         if results is None:
             log(
-                "tool.rag_search.unrecognized_result | "
+                "tool.rag_search.result_conversion_failed | "
                 f"type={type(search_results).__name__}"
             )
             return []
