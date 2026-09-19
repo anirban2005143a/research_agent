@@ -90,7 +90,7 @@ class ResearchNodes:
             ],
         )
         return {
-            "final_response": str(response.content).strip(),
+            "draft_response": str(response.content).strip(),
             "citations": [],
             "needs_hitl": False,
         }
@@ -184,7 +184,7 @@ class ResearchNodes:
             ],
         )
         return {
-            "final_response": str(response.content).strip(),
+            "draft_response": str(response.content).strip(),
             "citations": [],
             "needs_hitl": False,
         }
@@ -381,17 +381,10 @@ class ResearchNodes:
 
     @log_function
     def finalize_response(self, state):
-        """Persist the completed turn and let the LLM update session memory outside graph state."""
-        final_response = state.get("final_response") or state.get(
-            "draft_response", "No answer was produced."
-        )
+        """Persist the completed turn and set the final response from the accepted draft."""
+        final_response = state.get("draft_response", "No answer was produced.")
         citations = state.get("citations", [])[:5]
-        missing_citations = [citation for citation in citations if citation not in final_response]
-        if missing_citations:
-            final_response = (
-                f"{final_response.rstrip()}\n\nSources:\n"
-                + "\n".join(f"- {citation}" for citation in missing_citations)
-            )
+        
         self.session_memory.update_from_query(state.get("query", ""), self.llm)
         self.session_memory.update_from_response(final_response, self.llm)
 

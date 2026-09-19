@@ -12,6 +12,16 @@ st.set_page_config(page_title="Research Agent", page_icon="R", layout="wide")
 st.title("Research Agent")
 st.caption("Evidence-focused investigation with optional document grounding")
 
+
+def render_citations(citations: list[str]) -> None:
+    """Render citations as separate UI metadata, never as answer text."""
+    unique_citations = list(dict.fromkeys(str(citation).strip() for citation in citations if str(citation).strip()))
+    if not unique_citations:
+        return
+    st.markdown("**Citations**")
+    for citation in unique_citations:
+        st.markdown(f"- {citation}")
+
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "session_id" not in st.session_state:
@@ -118,6 +128,7 @@ with st.sidebar:
 for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
+        render_citations(message.get("citations", []))
 
 question = st.chat_input("Ask a research question")
 if question:
@@ -133,6 +144,7 @@ if question:
         )
     progress_holder = [None]
     shown_progress = set()
+    citations = []
 
     def show_progress(message: str) -> None:
         if message in shown_progress:
@@ -156,14 +168,19 @@ if question:
                 st.session_state.pending_question = ""
                 st.session_state.pending_query = ""
                 answer = result["final_response"]
+                citations = result.get("citations", [])
         except Exception as exc:
             answer = f"Unable to start the research agent: {exc}"
+            citations = []
     if progress_holder[0] is not None:
         progress_holder[0].update(state="complete")
     if answer:
-        st.session_state.chat_history.append({"role": "assistant", "content": answer})
+        st.session_state.chat_history.append(
+            {"role": "assistant", "content": answer, "citations": citations}
+        )
         with st.chat_message("assistant"):
             st.markdown(answer)
+            render_citations(citations)
 
 if st.session_state.pending_question:
     st.warning(st.session_state.pending_question)
@@ -190,6 +207,10 @@ if st.session_state.pending_question:
             st.session_state.pending_query = ""
             if not result.get("needs_hitl") and result.get("final_response"):
                 st.session_state.chat_history.append(
-                    {"role": "assistant", "content": result["final_response"]}
+                    {
+                        "role": "assistant",
+                        "content": result["final_response"],
+                        "citations": result.get("citations", []),
+                    }
                 )
             st.rerun()

@@ -4,6 +4,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
+from .config import settings
 from .llm import build_llm
 from .memory import SESSION_MEMORY_STORE, ShortTermMemory
 from .nodes import ResearchNodes
@@ -82,12 +83,11 @@ class ResearchGraph(ResearchNodes):
     def route_clarification(self, state: ResearchState):
         if state.get("hitl_answer"):
             return "clarify_query"
-        if state.get("final_response"):
-            return "finalize_response"
         return "plan"
 
     def route_evaluation(self, state: ResearchState):
-        if state.get("iterations", 0) >= 2:
+        max_iterations = getattr(settings, "max_research_iterations", 2)
+        if state.get("iterations", 0) >= max_iterations:
             return "finalize_response"
         evaluation = state.get("evaluation", {})
         return (
@@ -121,5 +121,4 @@ class ResearchGraph(ResearchNodes):
         if result.get("__interrupt__"):
             result["needs_hitl"] = True
             result["hitl_question"] = result["__interrupt__"][0].value["question"]
-            result["final_response"] = result["hitl_question"]
         return result
