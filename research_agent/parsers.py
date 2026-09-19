@@ -50,18 +50,10 @@ class ResponseEvaluation(BaseModel):
     )
 
 
-class ResearchDraft(BaseModel):
-    answer: str = Field(description="Markdown answer text for the user.")
-    citations: list[str] = Field(
+class SourceMerge(BaseModel):
+    sources: list[str] = Field(
         default_factory=list,
-        description="Separate source strings supporting the answer; never include them in answer.",
-    )
-
-
-class CitationMerge(BaseModel):
-    citations: list[str] = Field(
-        default_factory=list,
-        description="Necessary, unique citation strings selected from the old and recent citation lists.",
+        description="Necessary, unique source strings selected from the old and recent source lists, capped at 5 values.",
     )
 
 

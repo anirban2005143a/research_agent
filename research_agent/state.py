@@ -22,8 +22,8 @@ class ResearchState(TypedDict, total=False):
         list[dict[str, str]],
         "Tool response records containing only content and source for the current research run.",
     ]
-    citations: Annotated[
-        list[str], "Unique citation strings selected and merged by the LLM."
+    sources: Annotated[
+        list[str], "Unique source strings selected and merged by the LLM."
     ]
     draft_response: Annotated[
         str, "Latest synthesized research response before evaluation."

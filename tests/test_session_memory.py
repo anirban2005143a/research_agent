@@ -55,3 +55,16 @@ def test_planner_and_evaluator_prompts_are_query_centric_and_semantic():
     assert "word count" not in evaluator_text and "word-count" not in evaluator_text
     assert "teach" in evaluator_text
     assert settings.max_research_iterations >= 1
+
+
+def test_draft_and_source_prompts_are_plain_text_and_compact():
+    draft_text = prompts.DRAFT_RESPONSE_SYSTEM_PROMPT.lower()
+    source_text = prompts.SOURCE_MERGE_SYSTEM_PROMPT.lower()
+
+    assert "return only the answer text" in draft_text
+    assert "json" not in draft_text
+    assert "source" not in draft_text or "source list" not in draft_text
+    assert "markdown" in draft_text
+    assert "at most 5" in source_text
+    assert "most relevant" in source_text
+    assert settings.llm_max_new_tokens >= 4096

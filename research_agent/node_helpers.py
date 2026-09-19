@@ -7,15 +7,14 @@ from urllib.parse import quote
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
-from .parsers import CitationMerge, ResearchDraft, llm_response_fixing_parser
+from .parsers import SourceMerge, llm_response_fixing_parser
 from .prompts import (
-    CITATION_MERGE_INPUT_TEMPLATE,
-    CITATION_MERGE_SYSTEM_PROMPT,
+    SOURCE_MERGE_INPUT_TEMPLATE,
+    SOURCE_MERGE_SYSTEM_PROMPT,
     DRAFT_RESPONSE_INPUT_TEMPLATE,
     DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT,
     DRAFT_RESPONSE_SYSTEM_PROMPT,
     MESSAGE_SUMMARY_SYSTEM_PROMPT,
-    RAG_EVIDENCE_CONTEXT,
 )
 from .utils import log, retry_call
 
@@ -102,123 +101,77 @@ def format_recent_messages(messages: list[Any]) -> str:
     return "\n".join(formatted_messages) or "No previous conversation is available."
 
 
-def create_draft_and_select_citations(
+def generate_draft_response(
     llm: Any,
     state: dict[str, Any],
-    sources: list[dict[str, Any]],
+    content_blocks: list[str],
     session_context: dict[str, Any],
-) -> tuple[str, list[str]]:
-    """Generate an evidence-grounded draft and return the citation strings it selected."""
-    evidence_blocks = []
-    for item in sources:
-        evidence_blocks.append(
-            f"Source: {item.get('source', '')}\n"
-            f"Content: {item.get('content', '')}"
-        )
-    context = "\n\n--- EVIDENCE ---\n".join(evidence_blocks)
-    memory = session_context
+) -> str:
+    """Generate a standalone Markdown answer from the gathered research content."""
+    research_material = "\n\n--- RESEARCH MATERIAL ---\n".join(
+        f"Content block {index}: {content.strip()}"
+        for index, content in enumerate(content_blocks, start=1)
+        if str(content).strip()
+    ) or "No research material was found for this query."
+    memory = session_context or {}
     message_summary = state.get("message_summary", "")
     evaluation = state.get("evaluation") or "No prior evaluation is available."
     recent_context = state.get("messages", [])
-    input_message = (
-        f"{RAG_EVIDENCE_CONTEXT}\n\n"
-        f"{DRAFT_RESPONSE_INPUT_TEMPLATE.format(
-            query=state['query'],
-            evaluation=evaluation,
-            user_info=memory.get('user_info', []),
-            session_context=memory.get('session_context', []),
-            message_summary=message_summary,
-            recent_conversation=format_recent_messages(recent_context),
-            evidence=context or 'No external evidence was found.',
-        )}"
+    input_message = DRAFT_RESPONSE_INPUT_TEMPLATE.format(
+        query=state["query"],
+        evaluation=evaluation,
+        user_info=memory.get("user_info", []),
+        session_context=memory.get("session_context", []),
+        message_summary=message_summary,
+        recent_conversation=format_recent_messages(recent_context),
+        research_material=research_material,
     )
-    parser = llm_response_fixing_parser(ResearchDraft, llm)
-    try:
-        result = parser.parse(
-            invoke_llm(
-                llm,
-                "draft_llm",
-                [
-                    SystemMessage(content=DRAFT_RESPONSE_SYSTEM_PROMPT),
-                    HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
-                ],
-            ).content
-        )
-        answer = result.answer.strip()
-        available_sources = {
-            str(item.get("source", "")).strip()
-            for item in sources
-            if str(item.get("source", "")).strip()
-        }
-        citations = list(
-            dict.fromkeys(
-                str(citation).strip()
-                for citation in result.citations
-                if str(citation).strip() in available_sources
-            )
-        )[:3]
-    except Exception as exc:
-        log(f"graph.collect_informations.draft_fallback | error={exc!r}")
-        answer = str(
-            invoke_llm(
-                llm,
-                "draft_response_llm_fallback",
-                [
-                    SystemMessage(content=DRAFT_RESPONSE_FALLBACK_SYSTEM_PROMPT),
-                    HumanMessage(
-                        content=(
-                            f"{input_message}\n\n"
-                            "Write the actual answer now. Return prose only."
-                        )
-                    ),
-                ],
-            ).content
-        )
-        citations = list(
-            dict.fromkeys(
-                str(item.get("source", "")).strip()
-                for item in sources
-                if str(item.get("source", "")).strip()
-            )
-        )[:5]
-    log(f"graph.collect_informations.completed | response_chars={len(str(answer))} | citation_count={len(citations)}")
-    return str(answer), citations
+    answer = invoke_llm(
+        llm,
+        "draft_llm",
+        [
+            SystemMessage(content=DRAFT_RESPONSE_SYSTEM_PROMPT),
+            HumanMessage(content=input_message),
+        ],
+    )
+    return str(getattr(answer, "content", answer)).strip()
 
-def merge_citations(
+
+def merge_sources(
     llm: Any,
-    old_citations: list[str],
-    recent_citations: list[str],
+    old_sources: list[str],
+    recent_sources: list[str],
     draft_response: str,
 ) -> list[str]:
-    """Ask the LLM to deduplicate citations and keep only those needed by the draft."""
-    allowed_citations = set(old_citations + recent_citations)
-    parser = llm_response_fixing_parser(CitationMerge, llm)
-    input_message = CITATION_MERGE_INPUT_TEMPLATE.format(
+    """Merge and deduplicate the source list down to the five most relevant sources."""
+    allowed_sources = {
+        str(source).strip()
+        for source in old_sources + recent_sources
+        if str(source).strip()
+    }
+    parser = llm_response_fixing_parser(SourceMerge, llm)
+    input_message = SOURCE_MERGE_INPUT_TEMPLATE.format(
         draft=draft_response,
-        old_citations="\n".join(old_citations) or "None",
-        recent_citations="\n".join(recent_citations) or "None",
+        old_sources="\n".join(str(source).strip() for source in old_sources if str(source).strip()) or "None",
+        recent_sources="\n".join(str(source).strip() for source in recent_sources if str(source).strip()) or "None",
     )
-    try:
-        result = parser.parse(
-            invoke_llm(
-                llm,
-                "citation_merge_llm",
-                [
-                    SystemMessage(content=CITATION_MERGE_SYSTEM_PROMPT),
-                    HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
-                ],
-            ).content
+    result = parser.parse(
+        invoke_llm(
+            llm,
+            "source_merge_llm",
+            [
+                SystemMessage(content=SOURCE_MERGE_SYSTEM_PROMPT),
+                HumanMessage(content=f"{input_message}\n\n{parser.get_format_instructions()}"),
+            ],
+        ).content
+    )
+    return list(
+        dict.fromkeys(
+            str(source).strip()
+            for source in result.sources
+            if str(source).strip() in allowed_sources
         )
-        return list(
-            dict.fromkeys(
-                str(citation).strip()
-                for citation in result.citations
-                if str(citation).strip() in allowed_citations
-            )
-        )[:5]
-    except Exception as exc:
-        log(f"graph.collect_informations.citation_merge_fallback | error={exc!r}")
-        return list(dict.fromkeys(old_citations + recent_citations))[:5]
+    )[:5]
 
 
 def tool_content_to_records(raw_content: Any, source_hint: str) -> list[dict[str, str]]:

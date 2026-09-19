@@ -13,14 +13,14 @@ st.title("Research Agent")
 st.caption("Evidence-focused investigation with optional document grounding")
 
 
-def render_citations(citations: list[str]) -> None:
-    """Render citations as separate UI metadata, never as answer text."""
-    unique_citations = list(dict.fromkeys(str(citation).strip() for citation in citations if str(citation).strip()))
-    if not unique_citations:
+def render_sources(sources: list[str]) -> None:
+    """Render sources as separate UI metadata, never as answer text."""
+    unique_sources = list(dict.fromkeys(str(source).strip() for source in sources if str(source).strip()))
+    if not unique_sources:
         return
     st.markdown("**Sources**")
-    for citation in unique_citations:
-        st.markdown(f"- {citation}")
+    for source in unique_sources:
+        st.markdown(f"- {source}")
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
@@ -128,7 +128,7 @@ with st.sidebar:
 for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        render_citations(message.get("citations", []))
+        render_sources(message.get("sources", []))
 
 question = st.chat_input("Ask a research question")
 if question:
@@ -144,7 +144,7 @@ if question:
         )
     progress_holder = [None]
     shown_progress = set()
-    citations = []
+    sources = []
 
     def show_progress(message: str) -> None:
         if message in shown_progress:
@@ -168,19 +168,19 @@ if question:
                 st.session_state.pending_question = ""
                 st.session_state.pending_query = ""
                 answer = result["final_response"]
-                citations = result.get("citations", [])
+                sources = result.get("sources", [])
         except Exception as exc:
             answer = f"Unable to start the research agent: {exc}"
-            citations = []
+            sources = []
     if progress_holder[0] is not None:
         progress_holder[0].update(state="complete")
     if answer:
         st.session_state.chat_history.append(
-            {"role": "assistant", "content": answer, "citations": citations}
+            {"role": "assistant", "content": answer, "sources": sources}
         )
         with st.chat_message("assistant"):
             st.markdown(answer)
-            render_citations(citations)
+            render_sources(sources)
 
 if st.session_state.pending_question:
     st.warning(st.session_state.pending_question)
@@ -210,7 +210,7 @@ if st.session_state.pending_question:
                     {
                         "role": "assistant",
                         "content": result["final_response"],
-                        "citations": result.get("citations", []),
+                        "sources": result.get("sources", []),
                     }
                 )
             st.rerun()

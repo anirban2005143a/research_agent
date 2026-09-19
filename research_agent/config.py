@@ -54,7 +54,7 @@ class Settings:
     embedding_cache_dir: str = _get_env("EMBEDDING_CACHE_DIR", ".models")
     embedding_local_files_only: bool = _get_env_bool("EMBEDDING_LOCAL_FILES_ONLY", False)
     hf_provider: str = _get_env("HF_PROVIDER", "auto")
-    llm_max_new_tokens: int = _get_env_int("LLM_MAX_NEW_TOKENS", 2048)
+    llm_max_new_tokens: int = _get_env_int("LLM_MAX_NEW_TOKENS", 4096)
     llm_temperature: float = _get_env_float("LLM_TEMPERATURE", 0.1)
     llm_call_delay_seconds: int = _get_env_int("LLM_CALL_DELAY_SECONDS", 20)
     max_retries: int = _get_env_int("MAX_RETRIES", 3)

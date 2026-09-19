@@ -33,10 +33,10 @@ from .prompts import (
 )
 from .node_helpers import (
     append_recent_conversation_turn,
-    create_draft_and_select_citations,
     format_recent_messages,
+    generate_draft_response,
     invoke_llm,
-    merge_citations,
+    merge_sources,
     normalize_tool_arguments,
     tool_content_to_records,
 )
@@ -92,7 +92,7 @@ class ResearchNodes:
         )
         return {
             "draft_response": str(response.content).strip(),
-            "citations": [],
+            "sources": [],
             "needs_hitl": False,
         }
 
@@ -186,7 +186,7 @@ class ResearchNodes:
         )
         return {
             "draft_response": str(response.content).strip(),
-            "citations": [],
+            "sources": [],
             "needs_hitl": False,
         }
 
@@ -334,26 +334,36 @@ class ResearchNodes:
 
     @log_function
     def collect_informations(self, state):
-        """Aggregate tool responses, draft the answer, and store the selected sources."""
-        sources = []
-        for response in state.get("tool_messages", []):
-            sources.append(response)
-        rag_used = any(
-            source.get("source", "").lower().endswith((".pdf", ".docx", ".txt", ".md"))
-            or ", page " in source.get("source", "").lower()
-            for source in sources
-        )
+        """Separate tool content from source names, draft the answer, and merge the relevant sources."""
+        tool_records = state.get("tool_messages", [])
+        content_blocks = []
+        source_names = []
+        for response in tool_records:
+            if not isinstance(response, dict):
+                continue
+            content = str(response.get("content", "")).strip()
+            source = str(response.get("source", "")).strip()
+            if content:
+                content_blocks.append(content)
+            if source:
+                source_names.append(source)
         log(
-            f"graph.sources.collected | rag_used={rag_used} | source_count={len(sources)}"
+            f"graph.sources.collected | source_count={len(source_names)} | content_count={len(content_blocks)}"
         )
-        draft, recent_citations = create_draft_and_select_citations(
-            self.llm, state, sources, self.session_memory.context()
+        draft = generate_draft_response(
+            self.llm,
+            state,
+            content_blocks,
+            self.session_memory.context(),
         )
-        citations = merge_citations(
-            self.llm, state.get("citations", []), recent_citations, draft
+        sources = merge_sources(
+            self.llm,
+            state.get("sources", []),
+            source_names,
+            draft,
         )
         return {
-            "citations": citations,
+            "sources": sources,
             "tool_messages": [],
             "tasks": [],
             "draft_response": draft,
@@ -372,7 +382,7 @@ class ResearchNodes:
             "tasks": [],
             "current_task_index": 0,
             "tool_messages": [],
-            "citations": [],
+            "sources": [],
             "draft_response": "",
             "evaluation": {},
             "iterations": 0,
@@ -385,7 +395,7 @@ class ResearchNodes:
     def finalize_response(self, state):
         """Persist the completed turn and set the final response from the accepted draft."""
         final_response = state.get("draft_response", "No answer was produced.")
-        citations = state.get("citations", [])[:5]
+        sources = state.get("sources", [])[:5]
 
         try:
             self.session_memory.update_from_query(state.get("query", ""), self.llm)
@@ -403,7 +413,7 @@ class ResearchNodes:
             "tasks": [],
             "current_task_index": 0,
             "tool_messages": [],
-            "citations": citations,
+            "sources": sources,
             "draft_response": "",
             "evaluation": state.get("evaluation", {}),
         }
