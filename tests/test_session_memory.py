@@ -1,4 +1,5 @@
 from research_agent.memory import SessionMemoryStore, ShortTermMemory
+from research_agent.node_helpers import append_recent_state_message
 from research_agent.nodes import ResearchNodes
 
 
@@ -23,17 +24,20 @@ def test_recent_graph_messages_roll_over_to_message_summary():
     graph = DummyResearchNodes()
     state = {
         "messages": [
-            {"role": "user", "content": "old question"},
-            {"role": "assistant", "content": "old answer"},
-            {"role": "user", "content": "second question"},
-            {"role": "assistant", "content": "second answer"},
-            {"role": "user", "content": "third question"},
+            {"role": role, "content": f"turn-{index}-{role}"}
+            for index in range(5)
+            for role in ("user", "assistant")
         ],
         "message_summary": "",
     }
 
-    state = graph._append_recent_state_message(state, {"role": "assistant", "content": "third answer"})
+    state = append_recent_state_message(
+        state, {"role": "user", "content": "sixth question"}, graph.llm
+    )
+    state = append_recent_state_message(
+        state, {"role": "assistant", "content": "sixth answer"}, graph.llm
+    )
 
-    assert len(state["messages"]) == 5
+    assert len(state["messages"]) == 10
     assert state["message_summary"]
-    assert state["messages"][0]["content"] == {"role": "assistant", "content": "third answer"}["content"] or "third answer" in str(state["messages"][-1])
+    assert state["messages"][0]["content"] == "turn-1-user"

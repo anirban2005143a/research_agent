@@ -2,7 +2,6 @@ from typing import Any
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode
 from langgraph.types import Command
 
 from .llm import build_llm
@@ -30,7 +29,6 @@ class ResearchGraph(ResearchNodes):
         else:
             self.session_memory = SESSION_MEMORY_STORE.get_or_create(self.session_id)
         self.tools = build_research_tools(rag, document_handler=document_handler)
-        self.tool_node = ToolNode(self.tools)
         self.graph = self._build().compile(checkpointer=MemorySaver())
 
     def clear_session_memory(self) -> None:
@@ -44,8 +42,7 @@ class ResearchGraph(ResearchNodes):
         workflow.add_node("out_of_scope_response", self.out_of_scope_response)
         workflow.add_node("clarify_query", self.clarify_query)
         workflow.add_node("plan", self.plan)
-        workflow.add_node("research_node", self.research_node)
-        workflow.add_node("execute_tools", self.execute_tools)
+        workflow.add_node("execute_task", self.execute_task)
         workflow.add_node("collect_informations", self.collect_informations)
         workflow.add_node("evaluate_response", self.evaluate_response)
         workflow.add_node("finalize_response", self.finalize_response)
@@ -62,12 +59,11 @@ class ResearchGraph(ResearchNodes):
             self.route_clarification,
             {"clarify_query": "clarify_query", "plan": "plan", "finalize_response": "finalize_response"},
         )
-        workflow.add_edge("plan", "research_node")
-        workflow.add_edge("research_node", "execute_tools")
+        workflow.add_edge("plan", "execute_task")
         workflow.add_conditional_edges(
-            "execute_tools",
+            "execute_task",
             self.route_task_progress,
-            {"research_node": "research_node", "collect_informations": "collect_informations"},
+            {"execute_task": "execute_task", "collect_informations": "collect_informations"},
         )
         workflow.add_edge("collect_informations", "evaluate_response")
         workflow.add_conditional_edges(
@@ -91,34 +87,37 @@ class ResearchGraph(ResearchNodes):
         return "plan"
 
     def route_evaluation(self, state: ResearchState):
-        if state.get("iterations", 0) >= 3:
+        if state.get("iterations", 0) >= 2:
             return "finalize_response"
-        return "plan" if state.get("evaluation", {}).get("improvement_scopes") else "finalize_response"
+        evaluation = state.get("evaluation", {})
+        return (
+            "plan"
+            if evaluation.get("needs_improvement") and evaluation.get("improvement_scopes")
+            else "finalize_response"
+        )
 
     def route_task_progress(self, state: ResearchState):
         """Continue with the next planned task or synthesize all collected responses."""
         task_index = state.get("current_task_index", 0)
         task_count = len(state.get("tasks", []))
-        return "research_node" if task_index < task_count else "collect_informations"
+        return "execute_task" if task_index < task_count else "collect_informations"
 
     def invoke(
         self,
         query: str,
         messages: list[Any] | None = None,
         hitl_answer: str = "",
+        resume_hitl: bool = False,
         thread_id: str = "default",
     ):
         config = {"configurable": {"thread_id": thread_id}}
-        if hitl_answer:
+        if resume_hitl:
             result = self.graph.invoke(Command(resume=hitl_answer), config=config)
         else:
-            result = self.graph.invoke(
-                {
-                    "query": query,
-                    "messages": messages or [],
-                },
-                config=config,
-            )
+            input_state = {"query": query}
+            if messages is not None:
+                input_state["messages"] = messages
+            result = self.graph.invoke(input_state, config=config)
         if result.get("__interrupt__"):
             result["needs_hitl"] = True
             result["hitl_question"] = result["__interrupt__"][0].value["question"]

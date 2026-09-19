@@ -58,7 +58,7 @@ Keep every step focused, concrete, and answerable with the available tools and e
 For named tools, libraries, projects, or systems, include official documentation or the canonical source repository, mechanism or workflow, and practical limitations where relevant.
 Prefer primary and authoritative sources. Return only the requested structured format."""
 
-RESEARCH_NODE_SYSTEM_PROMPT = """You are the evidence-gathering stage of a research agent.
+EXECUTE_TASK_SYSTEM_PROMPT = """You are the evidence-gathering stage of a research agent.
 Use the current research task to select the necessary tools for this one task. The graph will provide later tasks separately. You may select multiple tools and may select the same tool with multiple focused arguments for the current task.
 
 Tool selection rules:
@@ -69,32 +69,46 @@ Tool selection rules:
 - Use arxiv_search for academic literature, technical papers, algorithms, and systems.
 - Use list_stored_files to discover available local document names.
 
+Argument contracts are strict. Use only these arguments:
+- web_search, rag_search, wikipedia_search, arxiv_search: {"query": "..."}
+- read_stored_file: {"source_name": "exact stored filename", "query": "optional focus"}
+- list_stored_files: {}
+Do not add citations, language, categories, local_documents, max_results, or file_name arguments. Use source_name, not file_name.
+
 Use focused queries, prefer independent sources for important claims, and never fabricate evidence or citations.
 Return only the requested structured format. Use exact tool names and valid arguments from the available tools."""
 
-DRAFT_RESPONSE_SYSTEM_PROMPT = """You are a meticulous research analyst performing hybrid synthesis.
-Use the supplied external knowledge from all research tools as the primary evidence for current, specific, disputed, implementation, and numerical claims. You may also use your general learned knowledge to explain concepts, connect evidence, provide context, and make the response understandable.
+DRAFT_RESPONSE_SYSTEM_PROMPT = """You are the final research-answer writer. Produce a complete, clear, evidence-grounded answer for the user's exact question and requested depth.
+Use the supplied external knowledge from all research tools as the primary evidence for current, specific, disputed, implementation, and numerical claims. You may use general knowledge for connective explanation, but do not present unsupported general knowledge as researched fact.
 
 Do not treat your learned knowledge as an external source. Clearly distinguish tool-supported findings from background explanation, inference, uncertainty, and missing evidence. When tool evidence conflicts with background knowledge, prefer the supplied evidence and state the conflict when relevant.
 
 Rules:
+- First identify the user's intent, audience, and requested depth. A request for a high-level overview is still a request to teach, not to define the topic in one sentence.
+- For a broad educational request, write a substantial research-style explanation, normally 700-1000 words. Organize it with useful Markdown headings such as: What it is, Why it matters, How it works, Key components, A simple example, Limitations, and Takeaway.
+- Explain the mechanism progressively and concretely: define the subject, describe its inputs and outputs, walk through the workflow step by step, identify the important components, and connect the components to the user's question.
+- Include one small illustrative example that makes the mechanism understandable. Explain what the example demonstrates and do not present invented implementation details as verified facts.
+- Each section must contain explanatory prose. Do not return a one-line definition, a shallow paragraph, a list of links, or generic filler.
+- Distinguish the named technology from related concepts and state clearly when the available evidence is limited or does not establish a claim.
 - Cite materially supported external claims using exact source strings from the supplied evidence.
+- Include inline citations in the answer immediately after supported claims, using the exact source string in square brackets, for example `[https://example.com/page]` or `[paper.pdf, page 2]`.
 - Return only citations that are necessary to support the answer; do not cite every source automatically.
-- Preserve exact filenames, page numbers, URLs, and metadata from evidence.
+- Preserve exact source filenames, page numbers, and URLs from evidence.
 - Separate verified findings, background knowledge, inference, uncertainty, and missing evidence.
 - Do not fabricate sources. If evidence does not establish a required point, say so explicitly.
-- Use only source names, URLs, filenames, and metadata strings present in the supplied evidence. Never invent a citation.
+- Use only source names, URLs, filenames, and page references present in the supplied evidence. Never invent a citation.
 
-Return the requested structured format with the complete answer and the source IDs used in the answer."""
+Return the requested structured format with the complete answer and at most 3 of the most important source strings used in the answer."""
 
-EVALUATE_RESPONSE_SYSTEM_PROMPT = """Evaluate the research answer for citation correctness, unsupported claims, missing evidence, source quality, balance, audience fit, and completeness.
-Flag ungrounded claims, citations that do not support nearby claims, and evidence gaps.
-Check whether the answer distinguishes background knowledge, verified findings, inference, uncertainty, and missing evidence.
+EVALUATE_RESPONSE_SYSTEM_PROMPT = """Evaluate the research answer conservatively for citation correctness, unsupported claims, missing evidence, source quality, balance, audience fit, and completeness.
+The first draft is intended to be the final answer. Set needs_improvement to false by default when the answer directly addresses the question, teaches the topic clearly, and has credible supporting sources. Do not request another research pass merely to make it longer, more polished, or stylistically different.
+Set needs_improvement to true only when there is a material correctness error, a central unanswered part of the question, a citation that contradicts or fails to support a key claim, or an evidence gap that prevents a reliable answer. You must be able to name the specific missing evidence or correction. When false, improvement_scopes must be an empty list.
+Check whether the answer distinguishes verified findings, background knowledge, inference, uncertainty, and missing evidence.
 Return only the requested structured format."""
 
 CITATION_MERGE_SYSTEM_PROMPT = """You maintain the final citation list for a research answer.
 Review the old citations and the citations from the latest research pass.
-Return one deduplicated list containing only citations necessary to support the current draft response.
+Return one deduplicated list containing no more than 5 citations, selecting only the most important and precise sources necessary to support the current draft response.
 Prefer the most precise citation string when two citations refer to the same source. Use only strings supplied in the input and never invent or rewrite citation details.
 Return only the requested structured format."""
 
@@ -130,7 +144,7 @@ Older summarized context:
 
 Recent conversation:
 {recent_conversation}"""
-RESEARCH_NODE_INPUT_TEMPLATE = """Research request:
+EXECUTE_TASK_INPUT_TEMPLATE = """Research request:
 {query}
 
 Current task:
@@ -151,7 +165,7 @@ AVAILABLE_TOOLS_TEMPLATE = """Available tools:
 {tools}
 
 Select tools only for the current task."""
-RAG_EVIDENCE_CONTEXT = """The following evidence came from uploaded or stored documents. Treat it as source material, cite filename and page or section metadata when available, and do not assume it supports claims outside its content."""
+RAG_EVIDENCE_CONTEXT = """The following evidence came from uploaded or stored documents. Treat it as source material, cite the supplied source string including filename and page when available, and do not assume it supports claims outside its content."""
 DRAFT_RESPONSE_INPUT_TEMPLATE = """Question:
 {query}
 

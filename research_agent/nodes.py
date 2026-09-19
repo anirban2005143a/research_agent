@@ -1,8 +1,8 @@
+import json
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.types import interrupt
-
 from .parsers import (
     ClarificationDecision,
     ResearchPlan,
@@ -18,13 +18,12 @@ from .prompts import (
     CONVERSATION_CONTEXT_TEMPLATE,
     EVALUATE_RESPONSE_SYSTEM_PROMPT,
     HITL_CLARIFICATION_QUESTION,
-    MESSAGE_SUMMARY_SYSTEM_PROMPT,
     OUT_OF_SCOPE_INPUT_TEMPLATE,
     OUT_OF_SCOPE_RESPONSE_SYSTEM_PROMPT,
     PLANNING_INPUT_TEMPLATE,
     PLANNING_SYSTEM_PROMPT,
-    RESEARCH_NODE_INPUT_TEMPLATE,
-    RESEARCH_NODE_SYSTEM_PROMPT,
+    EXECUTE_TASK_INPUT_TEMPLATE,
+    EXECUTE_TASK_SYSTEM_PROMPT,
     SCOPE_GATE_SYSTEM_PROMPT,
     SINGLE_QUERY_INPUT_TEMPLATE,
     UNCLEAR_QUERY_INPUT_TEMPLATE,
@@ -32,11 +31,13 @@ from .prompts import (
     AVAILABLE_TOOLS_TEMPLATE,
 )
 from .node_helpers import (
+    append_recent_state_message,
     create_draft_and_select_citations,
     format_recent_messages,
     invoke_llm,
     merge_citations,
-    tool_messages_to_records,
+    normalize_tool_arguments,
+    tool_content_to_records,
 )
 from .utils import log, log_function
 
@@ -222,24 +223,24 @@ class ResearchNodes:
             log(f"graph.plan.created | task_count={len(tasks)}")
             for index, task in enumerate(tasks, start=1):
                 log(f"graph.plan.task | index={index} | task={task!r}")
-            return {"tasks": tasks, "current_task_index": 0, "tool_responses": []}
+            return {"tasks": tasks, "current_task_index": 0, "tool_messages": []}
         except Exception as exc:
             log(f"graph.plan.fallback | action=original_query | error={exc!r}")
             return {
                 "tasks": [state["query"]],
                 "current_task_index": 0,
-                "tool_responses": [],
+                "tool_messages": [],
             }
 
     @log_function
-    def research_node(self, state):
-        """Ask the LLM for structured tool calls without requiring provider tool support."""
+    def execute_task(self, state):
+        """Select and run the tools needed for the current research task."""
         tasks = state.get("tasks", [state["query"]])
         task_index = state.get("current_task_index", 0)
         task = tasks[task_index] if task_index < len(tasks) else state["query"]
         memory = self.session_memory.context()
         message_summary = state.get("message_summary", "")
-        input_message = RESEARCH_NODE_INPUT_TEMPLATE.format(
+        input_message = EXECUTE_TASK_INPUT_TEMPLATE.format(
             query=state["query"],
             task=task,
             user_info=memory.get("user_info", []),
@@ -253,7 +254,7 @@ class ResearchNodes:
         )
         parser = llm_response_fixing_parser(ResearchToolSelection, self.llm)
         messages = [
-            SystemMessage(content=RESEARCH_NODE_SYSTEM_PROMPT),
+            SystemMessage(content=EXECUTE_TASK_SYSTEM_PROMPT),
             HumanMessage(
                 content=(
                     f"{input_message}\n\n"
@@ -268,8 +269,18 @@ class ResearchNodes:
             if isinstance(message, (HumanMessage, SystemMessage, AIMessage))
         )
         try:
+            selection_response = invoke_llm(self.llm, "execute_task_llm", messages)
+            raw_selection = getattr(selection_response, "content", selection_response)
+            try:
+                selection_payload = json.loads(raw_selection)
+            except (TypeError, json.JSONDecodeError):
+                selection_payload = raw_selection
+            if isinstance(selection_payload, list):
+                raw_selection = json.dumps({"tool_calls": selection_payload})
+            elif isinstance(selection_payload, dict):
+                raw_selection = json.dumps(selection_payload)
             selection = parser.parse(
-                invoke_llm(self.llm, "research_node_llm", messages).content
+                raw_selection
             )
             available_tool_names = {tool.name for tool in self.tools}
             tool_calls = [
@@ -283,32 +294,39 @@ class ResearchNodes:
                 if call.name in available_tool_names
             ]
         except Exception as exc:
-            log(f"graph.research_node.tool_selection_fallback | error={exc!r}")
+            log(f"graph.execute_task.tool_selection_fallback | error={exc!r}")
             tool_calls = []
-        response = AIMessage(content="", tool_calls=tool_calls)
-        log(f"graph.research_node.tool_calls | count={len(tool_calls)}")
+        log(f"graph.execute_task.tool_calls | count={len(tool_calls)}")
         for call in tool_calls:
             log(
-                f"graph.research_node.tool_selected | name={call.get('name')} | args={call.get('args')}"
+                f"graph.execute_task.tool_selected | name={call.get('name')} | args={call.get('args')}"
             )
-        return {"messages": [response], "tool_responses": []}
 
-    @log_function
-    def execute_tools(self, state):
-        """Execute the tool calls selected by the research node and preserve their responses."""
-        messages = state.get("messages", [])
-        tool_calls = messages[-1].tool_calls if messages else []
-        if not tool_calls:
-            return {
-                "tool_responses": [],
-                "current_task_index": state.get("current_task_index", 0) + 1,
-            }
-        result = self.tool_node.invoke(state)
-        tool_messages = result.get("messages", [])
+        tools_by_name = {tool.name: tool for tool in self.tools}
+        tool_records = []
+        for tool_call in tool_calls:
+            tool_name = tool_call.get("name", "unknown_tool")
+            tool = tools_by_name.get(tool_name)
+            try:
+                if tool is None:
+                    raise ValueError(f"Unknown research tool: {tool_name}")
+                arguments = normalize_tool_arguments(tool_name, tool_call.get("args", {}))
+                content = tool.invoke(arguments)
+                source_hint = (
+                    arguments.get("source_name")
+                    if tool_name == "read_stored_file"
+                    else tool_name
+                )
+                tool_records.extend(tool_content_to_records(content, source_hint))
+            except Exception as exc:
+                log(
+                    f"graph.execute_task.tool_failed | name={tool_name}"
+                    f" | error={exc!r}"
+                )
+                continue
         return {
-            "messages": tool_messages,
-            "tool_responses": state.get("tool_responses", [])
-            + tool_messages_to_records(tool_messages),
+            "tool_messages": state.get("tool_messages", [])
+            + tool_records,
             "current_task_index": state.get("current_task_index", 0) + 1,
         }
 
@@ -316,9 +334,13 @@ class ResearchNodes:
     def collect_informations(self, state):
         """Aggregate tool responses, draft the answer, and store the selected sources."""
         sources = []
-        for response in state.get("tool_responses", []):
+        for response in state.get("tool_messages", []):
             sources.append(response)
-        rag_used = any(source.get("source") == "rag_search" for source in sources)
+        rag_used = any(
+            source.get("source", "").lower().endswith((".pdf", ".docx", ".txt", ".md"))
+            or ", page " in source.get("source", "").lower()
+            for source in sources
+        )
         log(
             f"graph.sources.collected | rag_used={rag_used} | source_count={len(sources)}"
         )
@@ -330,94 +352,24 @@ class ResearchNodes:
         )
         return {
             "citations": citations,
-            "tool_responses": [],
+            "tool_messages": [],
+            "tasks": [],
             "draft_response": draft,
             "current_task_index": 0,
-        }
-
-    def _append_recent_state_message(
-        self, state: dict, message: dict[str, str]
-    ) -> dict:
-        """Keep at most 5 recent turns in graph state and fold removed turns into message_summary."""
-        current_messages = list(state.get("messages", []))
-        current_messages.append(message)
-
-        if len(current_messages) <= 5:
-            return {
-                **state,
-                "messages": current_messages,
-                "message_summary": state.get("message_summary", ""),
-            }
-
-        removed = current_messages[:-5]
-        remaining = current_messages[-5:]
-        summary = state.get("message_summary", "").strip()
-        removal_text = format_recent_messages(removed)
-        if removal_text == "No previous conversation is available.":
-            removal_text = ""
-        if removal_text:
-            summary_input = (
-                f"Existing older summary:\n{summary or 'None'}\n\n"
-                f"Removed conversation turns:\n{removal_text}"
-            )
-            try:
-                summary = str(
-                    invoke_llm(
-                        self.llm,
-                        "message_summary_llm",
-                        [
-                            SystemMessage(content=MESSAGE_SUMMARY_SYSTEM_PROMPT),
-                            HumanMessage(content=summary_input),
-                        ],
-                    ).content
-                ).strip()
-            except Exception as exc:
-                log(f"graph.message_summary.fallback | error={exc!r}")
-                summary = "\n".join(
-                    part for part in [summary, removal_text] if part
-                ).strip()
-
-        return {
-            **state,
-            "messages": remaining,
-            "message_summary": summary,
         }
 
     @log_function
     def clean_state(self, state):
         """Load the session conversation and clear transient graph data before a new run."""
         query = state.get("query", "")
-        state_messages = list(state.get("messages", []))
-        last_message = state_messages[-1] if state_messages else None
-        last_content = (
-            last_message.get("content", "")
-            if isinstance(last_message, dict)
-            else getattr(last_message, "content", "")
-        )
-        if query and state_messages and last_content != query:
-            compacted_state = self._append_recent_state_message(
-                {
-                    "messages": state_messages,
-                    "message_summary": state.get("message_summary", ""),
-                },
-                {"role": "user", "content": query},
-            )
-            state_messages = compacted_state["messages"]
-            message_summary = compacted_state.get("message_summary", "")
-        elif query and not state_messages:
-            state_messages = [{"role": "user", "content": query}]
-            message_summary = state.get("message_summary", "")
-        else:
-            message_summary = state.get("message_summary", "")
 
         return {
             "query": query,
-            "messages": state_messages,
-            "message_summary": message_summary,
+            "message_summary": state.get("message_summary", ""),
             "scope_category": "",
             "tasks": [],
             "current_task_index": 0,
-            "tool_responses": [],
+            "tool_messages": [],
             "citations": [],
             "draft_response": "",
             "evaluation": {},
@@ -433,6 +385,13 @@ class ResearchNodes:
         final_response = state.get("final_response") or state.get(
             "draft_response", "No answer was produced."
         )
+        citations = state.get("citations", [])[:5]
+        missing_citations = [citation for citation in citations if citation not in final_response]
+        if missing_citations:
+            final_response = (
+                f"{final_response.rstrip()}\n\nSources:\n"
+                + "\n".join(f"- {citation}" for citation in missing_citations)
+            )
         self.session_memory.update_from_query(state.get("query", ""), self.llm)
         self.session_memory.update_from_response(final_response, self.llm)
 
@@ -442,18 +401,20 @@ class ResearchNodes:
             "messages": list(state.get("messages", [])),
             "tasks": [],
             "current_task_index": 0,
-            "tool_responses": [],
-            "citations": state.get("citations", []),
+            "tool_messages": [],
+            "citations": citations,
             "draft_response": "",
             "evaluation": state.get("evaluation", {}),
         }
-        updated_state = self._append_recent_state_message(
+        updated_state = append_recent_state_message(
             updated_state,
             {"role": "user", "content": state.get("query", "")},
+            self.llm,
         )
-        updated_state = self._append_recent_state_message(
+        updated_state = append_recent_state_message(
             updated_state,
             {"role": "assistant", "content": final_response},
+            self.llm,
         )
         return updated_state
 
@@ -490,12 +451,19 @@ class ResearchNodes:
             return {
                 "evaluation": review.model_dump(),
                 "iterations": state.get("iterations", 0) + 1,
+                "tasks": [],
+                "current_task_index": 0,
+                "tool_messages": [],
             }
         except Exception:
             return {
                 "evaluation": {
                     "verdict": "Evaluation was unavailable.",
+                    "needs_improvement": False,
                     "improvement_scopes": [],
                 },
                 "iterations": state.get("iterations", 0) + 1,
+                "tasks": [],
+                "current_task_index": 0,
+                "tool_messages": [],
             }

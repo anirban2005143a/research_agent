@@ -3,6 +3,7 @@
 import json
 import re
 from typing import Any
+from urllib.parse import quote
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
@@ -12,9 +13,80 @@ from .prompts import (
     CITATION_MERGE_SYSTEM_PROMPT,
     DRAFT_RESPONSE_INPUT_TEMPLATE,
     DRAFT_RESPONSE_SYSTEM_PROMPT,
+    MESSAGE_SUMMARY_SYSTEM_PROMPT,
     RAG_EVIDENCE_CONTEXT,
 )
 from .utils import log, retry_call
+
+
+def normalize_tool_arguments(tool_name: str, arguments: dict) -> dict:
+    """Keep LLM-generated tool arguments compatible with the public schemas."""
+    arguments = dict(arguments or {})
+    if tool_name == "read_stored_file" and "source_name" not in arguments:
+        arguments["source_name"] = arguments.get("file_name", "")
+    if tool_name in {"web_search", "rag_search", "wikipedia_search", "arxiv_search"}:
+        return {"query": str(arguments.get("query", "")).strip()}
+    if tool_name == "read_stored_file":
+        return {
+            "source_name": str(arguments.get("source_name", "")).strip(),
+            "query": str(arguments.get("query", "")).strip(),
+        }
+    if tool_name == "list_stored_files":
+        return {}
+    return arguments
+
+
+def append_recent_state_message(
+    state: dict[str, Any], message: dict[str, str], llm: Any
+) -> dict[str, Any]:
+    """Keep at most five completed turns and summarize older turns."""
+    current_messages = list(state.get("messages", []))
+    current_messages.append(message)
+
+    if len(current_messages) <= 10:
+        return {
+            **state,
+            "messages": current_messages,
+            "message_summary": state.get("message_summary", ""),
+        }
+
+    removed = current_messages[:-10]
+    remaining = current_messages[-10:]
+    summary = state.get("message_summary", "").strip()
+    removal_text = format_recent_messages(removed)
+    if removal_text == "No previous conversation is available.":
+        removal_text = ""
+    if removal_text and llm:
+        summary_input = (
+            f"Existing older summary:\n{summary or 'None'}\n\n"
+            f"Removed conversation turns:\n{removal_text}"
+        )
+        try:
+            summary = str(
+                invoke_llm(
+                    llm,
+                    "message_summary_llm",
+                    [
+                        SystemMessage(content=MESSAGE_SUMMARY_SYSTEM_PROMPT),
+                        HumanMessage(content=summary_input),
+                    ],
+                ).content
+            ).strip()
+        except Exception as exc:
+            log(f"graph.message_summary.fallback | error={exc!r}")
+            summary = "\n".join(
+                part for part in [summary, removal_text] if part
+            ).strip()
+    elif removal_text:
+        summary = "\n".join(
+            part for part in [summary, removal_text] if part
+        ).strip()
+
+    return {
+        **state,
+        "messages": remaining,
+        "message_summary": summary,
+    }
 
 
 def format_recent_messages(messages: list[Any]) -> str:
@@ -41,12 +113,8 @@ def create_draft_and_select_citations(
     """Generate an evidence-grounded draft and return the citation strings it selected."""
     evidence_blocks = []
     for item in sources:
-        locations = item.get("locations", [])
-        location = "; ".join(locations) or item.get("source", "")
         evidence_blocks.append(
             f"Source: {item.get('source', '')}\n"
-            f"Location: {location}\n"
-            f"Metadata: {json.dumps(item.get('metadata', {}), ensure_ascii=True)}\n"
             f"Content: {item.get('content', '')}"
         )
     context = "\n\n--- EVIDENCE ---\n".join(evidence_blocks)
@@ -77,7 +145,7 @@ def create_draft_and_select_citations(
             ).content
         )
         answer = result.answer
-        citations = result.citations
+        citations = list(dict.fromkeys(result.citations))[:3]
     except Exception as exc:
         log(f"graph.collect_informations.draft_fallback | error={exc!r}")
         answer = str(
@@ -116,46 +184,58 @@ def merge_citations(
                 ],
             ).content
         )
-        return result.citations
+        return list(dict.fromkeys(result.citations))[:5]
     except Exception as exc:
         log(f"graph.collect_informations.citation_merge_fallback | error={exc!r}")
-        return list(dict.fromkeys(old_citations + recent_citations))
+        return list(dict.fromkeys(old_citations + recent_citations))[:5]
 
 
-def tool_messages_to_records(tool_messages: list[BaseMessage]) -> list[dict[str, Any]]:
-    """Convert tool messages into raw source/content records for graph state."""
+def tool_content_to_records(raw_content: Any, source_hint: str) -> list[dict[str, str]]:
+    """Convert one successful tool result into source/content records."""
     records: list[dict[str, Any]] = []
-    for message in tool_messages:
-        raw_content = message.content
-        content = str(raw_content)
-        try:
-            payload = json.loads(content)
-        except json.JSONDecodeError:
-            payload = None
-        if isinstance(payload, dict) and payload.get("result_type") == "rag_search_results":
-            for result in payload.get("results", []):
-                records.append(
-                    {
-                        "source": result.get("source", message.name or "rag_search"),
-                        "content": result.get("content", ""),
-                        "locations": [result.get("citation", "")],
-                        "metadata": result.get("metadata", {}),
-                        "tool_call_id": message.tool_call_id,
-                    }
-                )
-            continue
-        records.append(
-            {
-                "source": message.name or "research tool",
-                "content": payload if payload is not None else raw_content,
-                "locations": re.findall(r"https?://[^\s)]+", content),
-                "metadata": {
-                    "tool": message.name or "research tool",
-                    "tool_call_id": message.tool_call_id,
-                },
-                "tool_call_id": message.tool_call_id,
-            }
-        )
+    content = str(raw_content)
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict) and payload.get("result_type") == "rag_search_results":
+        for result in payload.get("results", []):
+            records.append(
+                {
+                    "content": str(result.get("content", "")),
+                    "source": result.get("citation") or result.get("source", source_hint),
+                }
+            )
+        return records
+    if isinstance(payload, dict) and payload.get("result_type") == "wikipedia_search_results":
+        for result in payload.get("results", []):
+            records.append(
+                {
+                    "content": str(result.get("content", "")),
+                    "source": result.get("source") or result.get("url") or source_hint,
+                }
+            )
+        return records
+    if isinstance(payload, list) and source_hint == "web_search":
+        for result in payload:
+            records.append(
+                {
+                    "content": str(result.get("snippet") or result.get("body", "")),
+                    "source": result.get("link") or result.get("href") or result.get("title", source_hint),
+                }
+            )
+        return records
+    if isinstance(payload, str):
+        content = payload
+    elif payload is not None:
+        content = json.dumps(payload, ensure_ascii=True)
+    urls = re.findall(r"https?://[^\s)]+", content)
+    source = urls[0].rstrip(".,") if urls else source_hint
+    if not urls and source_hint == "wikipedia_search":
+        page_match = re.search(r"^Page:\s*(.+)$", content, re.MULTILINE)
+        if page_match:
+            source = f"https://en.wikipedia.org/wiki/{quote(page_match.group(1).strip().replace(' ', '_'))}"
+    records.append({"content": content, "source": source})
     return records
 
 

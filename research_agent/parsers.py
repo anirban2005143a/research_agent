@@ -40,6 +40,10 @@ class ClarificationDecision(BaseModel):
 
 class ResponseEvaluation(BaseModel):
     verdict: str = Field(description="Statement describing the quality and support of the response")
+    needs_improvement: bool = Field(
+        default=False,
+        description="True only when a material evidence, correctness, citation, or completeness problem requires another research pass.",
+    )
     improvement_scopes: list[str] = Field(
         default_factory=list,
         description="Specific areas needing improvement; empty when the response is ready",

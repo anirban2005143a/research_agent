@@ -1,6 +1,8 @@
+import json
 from typing import Any
 
-from langchain_community.tools import DuckDuckGoSearchRun, WikipediaQueryRun
+import wikipedia
+from langchain_community.tools import DuckDuckGoSearchResults, WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
@@ -25,7 +27,12 @@ class FileInput(BaseModel):
 
 def _web_search(query: str) -> str:
     log(f"tool.web_search.started | query={query!r}")
-    results = retry_call(lambda: DuckDuckGoSearchRun().invoke(query), "tool.web_search")
+    search_tool = DuckDuckGoSearchResults(
+        num_results=5,
+        output_format="json",
+        keys_to_include=["title", "link", "snippet"],
+    )
+    results = retry_call(lambda: search_tool.invoke(query), "tool.web_search")
     if not results:
         return "No web sources found. The available external knowledge may not cover this query."
     return str(results)
@@ -83,23 +90,42 @@ def build_research_tools(rag: HybridRAG, document_handler: DocumentHandler | Non
 
     @tool("read_stored_file", args_schema=FileInput)
     def read_stored_file(source_name: str, query: str = "") -> str:
-        """Use after a file name is known and you need the actual text of a specific uploaded document, usually to verify a claim or inspect a relevant section. Do not use this for vague file discovery."""
+        """Read one specific document uploaded by the user from the session document store. Use this when the user names a file or asks to summarize, inspect, verify, or extract information from a particular uploaded document. Do not use it for web or Wikipedia content, and do not use it when no exact stored filename is known."""
         log(f"tool.read_stored_file.started | source={source_name!r} | query={query!r}")
         return retry_call(lambda: document_handler.read_stored_file(source_name), "tool.read_stored_file")
 
     @tool("list_stored_files")
     def list_stored_files() -> list[str]:
-        """Use when you need to discover which local files are available before choosing a document-specific read/search."""
+        """List the files uploaded by the user and stored in the current research session. Use this before read_stored_file when the user refers to an uploaded document without giving its exact filename, or asks what documents are available. This does not search document contents."""
         log("tool.list_stored_files.started")
         return retry_call(document_handler.list_files, "tool.list_stored_files")
 
-    wikipedia_backend = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(top_k_results=3))
+    wikipedia.set_user_agent("ResearchAgentApp/1.0 (anirban@example.com)")
+    wikipedia_tool = WikipediaQueryRun(
+        api_wrapper=WikipediaAPIWrapper(
+            top_k_results=3,
+            doc_content_chars_max=4000,
+        )
+    )
 
     @tool("wikipedia_search", args_schema=QueryInput)
     def wikipedia_search(query: str) -> str:
         """Use for concise background, definitions, historical context, or neutral overview material. Prefer more authoritative sources for technical or disputed claims."""
         log(f"tool.wikipedia_search.started | query={query!r}")
-        return str(retry_call(lambda: wikipedia_backend.invoke(query), "tool.wikipedia_search"))
+        try:
+            try:
+                result = wikipedia_tool.invoke(query)
+            except json.JSONDecodeError as exc:
+                log(f"tool.wikipedia_search.unavailable | error={exc!r}")
+                return "Wikipedia search unavailable: the upstream response was not valid JSON."
+            except Exception:
+                result = retry_call(
+                    lambda: wikipedia_tool.invoke(query), "tool.wikipedia_search"
+                )
+        except Exception as exc:
+            log(f"tool.wikipedia_search.unavailable | error={exc!r}")
+            return f"Wikipedia search unavailable for this query: {exc}"
+        return str(result) or "Wikipedia returned no results for this query."
 
     @tool("arxiv_search", args_schema=QueryInput)
     def arxiv_search(query: str) -> str:

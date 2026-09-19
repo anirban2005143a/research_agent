@@ -148,22 +148,29 @@ if question:
                 question,
                 thread_id=st.session_state.thread_id,
             )
-            if result.get("needs_hitl") and not result.get("hitl_answer"):
+            if result.get("needs_hitl"):
                 st.session_state.pending_question = result["hitl_question"]
                 st.session_state.pending_query = question
-            answer = result["final_response"]
+                answer = ""
+            else:
+                st.session_state.pending_question = ""
+                st.session_state.pending_query = ""
+                answer = result["final_response"]
         except Exception as exc:
             answer = f"Unable to start the research agent: {exc}"
     if progress_holder[0] is not None:
         progress_holder[0].update(state="complete")
-    st.session_state.chat_history.append({"role": "assistant", "content": answer})
-    with st.chat_message("assistant"):
-        st.markdown(answer)
+    if answer:
+        st.session_state.chat_history.append({"role": "assistant", "content": answer})
+        with st.chat_message("assistant"):
+            st.markdown(answer)
 
 if st.session_state.pending_question:
     st.warning(st.session_state.pending_question)
     clarification = st.text_input("Clarify the research scope", key="clarification")
-    if st.button("Continue research") and clarification:
+    continue_research = st.button("Continue research")
+    skip_clarification = st.button("Skip clarification")
+    if (continue_research and clarification) or skip_clarification:
         st.session_state.pending_question = ""
         with st.status("Research progress", expanded=True) as progress:
             shown_progress = set()
@@ -176,8 +183,13 @@ if st.session_state.pending_question:
 
             result = st.session_state.graph.invoke(
                 st.session_state.pending_query,
-                hitl_answer=clarification,
+                hitl_answer=clarification if continue_research else "",
+                resume_hitl=True,
                 thread_id=st.session_state.thread_id,
             )
             st.session_state.pending_query = ""
+            if not result.get("needs_hitl") and result.get("final_response"):
+                st.session_state.chat_history.append(
+                    {"role": "assistant", "content": result["final_response"]}
+                )
             st.rerun()
