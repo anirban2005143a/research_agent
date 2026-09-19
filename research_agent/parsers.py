@@ -51,7 +51,7 @@ class ResponseEvaluation(BaseModel):
 
 
 class ResearchDraft(BaseModel):
-    answer: str = Field(description="The complete research answer with inline citations where appropriate.")
+    answer: str = Field(description="The complete research answer without source lists or citation strings.")
     citations: list[str] = Field(
         default_factory=list,
         description="Source names, URLs, filenames, or other exact citation strings used in the answer.",

@@ -1,7 +1,7 @@
 from research_agent import prompts
 from research_agent.config import settings
 from research_agent.memory import SessionMemoryStore, ShortTermMemory
-from research_agent.node_helpers import append_recent_state_message
+from research_agent.node_helpers import append_recent_conversation_turn
 from research_agent.nodes import ResearchNodes
 
 
@@ -33,11 +33,8 @@ def test_recent_graph_messages_roll_over_to_message_summary():
         "message_summary": "",
     }
 
-    state = append_recent_state_message(
-        state, {"role": "user", "content": "sixth question"}, graph.llm
-    )
-    state = append_recent_state_message(
-        state, {"role": "assistant", "content": "sixth answer"}, graph.llm
+    state = append_recent_conversation_turn(
+        state, "sixth question", "sixth answer", graph.llm
     )
 
     assert len(state["messages"]) == 10

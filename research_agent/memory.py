@@ -4,10 +4,10 @@ import re
 from pathlib import Path
 
 from langchain_core.messages import HumanMessage
-from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
 
 from .config import settings
+from .parsers import llm_response_fixing_parser
 from .utils import retry_call
 
 
@@ -124,7 +124,7 @@ class ShortTermMemory:
             "Return empty lists when there is nothing important to remember. Keep the result brief and deduplicated."
         )
         try:
-            parser = PydanticOutputParser(pydantic_object=MemoryExtraction)
+            parser = llm_response_fixing_parser(MemoryExtraction, llm)
             result = retry_call(
                 lambda: llm.invoke([HumanMessage(content=f"{prompt}\n\n{parser.get_format_instructions()}")]),
                 "user_info_extraction_llm",
@@ -149,7 +149,7 @@ class ShortTermMemory:
             "Return empty lists when there is nothing important to remember. Keep the result brief and deduplicated."
         )
         try:
-            parser = PydanticOutputParser(pydantic_object=MemoryExtraction)
+            parser = llm_response_fixing_parser(MemoryExtraction, llm)
             result = retry_call(
                 lambda: llm.invoke([HumanMessage(content=f"{prompt}\n\n{parser.get_format_instructions()}")]),
                 "session_context_extraction_llm",

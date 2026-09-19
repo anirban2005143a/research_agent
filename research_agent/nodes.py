@@ -31,7 +31,7 @@ from .prompts import (
     AVAILABLE_TOOLS_TEMPLATE,
 )
 from .node_helpers import (
-    append_recent_state_message,
+    append_recent_conversation_turn,
     create_draft_and_select_citations,
     format_recent_messages,
     invoke_llm,
@@ -384,9 +384,15 @@ class ResearchNodes:
         """Persist the completed turn and set the final response from the accepted draft."""
         final_response = state.get("draft_response", "No answer was produced.")
         citations = state.get("citations", [])[:5]
-        
-        self.session_memory.update_from_query(state.get("query", ""), self.llm)
-        self.session_memory.update_from_response(final_response, self.llm)
+
+        try:
+            self.session_memory.update_from_query(state.get("query", ""), self.llm)
+        except Exception as exc:
+            log(f"graph.finalize_response.query_memory_failed | error={exc!r}")
+        try:
+            self.session_memory.update_from_response(final_response, self.llm)
+        except Exception as exc:
+            log(f"graph.finalize_response.response_memory_failed | error={exc!r}")
 
         updated_state = {
             **state,
@@ -399,16 +405,19 @@ class ResearchNodes:
             "draft_response": "",
             "evaluation": state.get("evaluation", {}),
         }
-        updated_state = append_recent_state_message(
-            updated_state,
-            {"role": "user", "content": state.get("query", "")},
-            self.llm,
-        )
-        updated_state = append_recent_state_message(
-            updated_state,
-            {"role": "assistant", "content": final_response},
-            self.llm,
-        )
+        try:
+            updated_state = append_recent_conversation_turn(
+                updated_state,
+                state.get("query", ""),
+                final_response,
+                self.llm,
+            )
+        except Exception as exc:
+            log(f"graph.finalize_response.summary_failed | error={exc!r}")
+            updated_state["messages"] = list(updated_state.get("messages", []))[-8:] + [
+                {"role": "user", "content": state.get("query", "")},
+                {"role": "assistant", "content": final_response},
+            ]
         return updated_state
 
     @log_function

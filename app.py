@@ -18,7 +18,7 @@ def render_citations(citations: list[str]) -> None:
     unique_citations = list(dict.fromkeys(str(citation).strip() for citation in citations if str(citation).strip()))
     if not unique_citations:
         return
-    st.markdown("**Citations**")
+    st.markdown("**Sources**")
     for citation in unique_citations:
         st.markdown(f"- {citation}")
 

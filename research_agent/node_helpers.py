@@ -19,6 +19,21 @@ from .prompts import (
 from .utils import log, retry_call
 
 
+def _draft_needs_repair(answer: str, query: str) -> bool:
+    """Reject parser-description output and clearly insufficient teaching drafts."""
+    normalized_answer = " ".join(answer.lower().split())
+    if normalized_answer in {
+        "the complete research answer with inline citations where appropriate.",
+        "the complete research answer with inline citations where appropriate",
+    }:
+        return True
+    educational_request = any(
+        phrase in query.lower()
+        for phrase in ("teach me", "high level", "high-level", "explain", "overview", "understand")
+    )
+    return educational_request and len(answer.split()) < 80
+
+
 def normalize_tool_arguments(tool_name: str, arguments: dict) -> dict:
     """Keep LLM-generated tool arguments compatible with the public schemas."""
     arguments = dict(arguments or {})
@@ -36,55 +51,52 @@ def normalize_tool_arguments(tool_name: str, arguments: dict) -> dict:
     return arguments
 
 
-def append_recent_state_message(
-    state: dict[str, Any], message: dict[str, str], llm: Any
+def append_recent_conversation_turn(
+    state: dict[str, Any], query: str, response: str, llm: Any
 ) -> dict[str, Any]:
-    """Keep at most five completed turns and summarize older turns."""
+    """Append one completed turn while retaining five complete recent turns."""
     current_messages = list(state.get("messages", []))
-    current_messages.append(message)
-
-    if len(current_messages) <= 10:
-        return {
-            **state,
-            "messages": current_messages,
-            "message_summary": state.get("message_summary", ""),
-        }
-
-    removed = current_messages[:-10]
-    remaining = current_messages[-10:]
     summary = state.get("message_summary", "").strip()
-    removal_text = format_recent_messages(removed)
-    if removal_text == "No previous conversation is available.":
-        removal_text = ""
-    if removal_text and llm:
+    new_turn = [
+        {"role": "user", "content": query},
+        {"role": "assistant", "content": response},
+    ]
+
+    if len(current_messages) >= 10:
+        removed = current_messages[:2]
+        remaining = current_messages[2:]
+        removed_text = format_recent_messages(removed)
         summary_input = (
             f"Existing older summary:\n{summary or 'None'}\n\n"
-            f"Removed conversation turns:\n{removal_text}"
+            f"Newly archived conversation turn:\n{removed_text}"
         )
-        try:
-            summary = str(
-                invoke_llm(
-                    llm,
-                    "message_summary_llm",
-                    [
-                        SystemMessage(content=MESSAGE_SUMMARY_SYSTEM_PROMPT),
-                        HumanMessage(content=summary_input),
-                    ],
-                ).content
-            ).strip()
-        except Exception as exc:
-            log(f"graph.message_summary.fallback | error={exc!r}")
+        if removed_text and llm:
+            try:
+                summary = str(
+                    invoke_llm(
+                        llm,
+                        "message_summary_llm",
+                        [
+                            SystemMessage(content=MESSAGE_SUMMARY_SYSTEM_PROMPT),
+                            HumanMessage(content=summary_input),
+                        ],
+                    ).content
+                ).strip()
+            except Exception as exc:
+                log(f"graph.message_summary.fallback | error={exc!r}")
+                summary = "\n".join(
+                    part for part in [summary, removed_text] if part
+                ).strip()
+        elif removed_text:
             summary = "\n".join(
-                part for part in [summary, removal_text] if part
+                part for part in [summary, removed_text] if part
             ).strip()
-    elif removal_text:
-        summary = "\n".join(
-            part for part in [summary, removal_text] if part
-        ).strip()
+    else:
+        remaining = current_messages
 
     return {
         **state,
-        "messages": remaining,
+        "messages": remaining + new_turn,
         "message_summary": summary,
     }
 
@@ -144,18 +156,37 @@ def create_draft_and_select_citations(
                 ],
             ).content
         )
-        answer = result.answer
+        answer = result.answer.strip()
         citations = list(dict.fromkeys(result.citations))[:3]
+        if _draft_needs_repair(answer, state["query"]):
+            raise ValueError("Draft did not contain a complete explanatory answer")
     except Exception as exc:
         log(f"graph.collect_informations.draft_fallback | error={exc!r}")
         answer = str(
             invoke_llm(
                 llm,
                 "draft_response_llm_fallback",
-                [SystemMessage(content=DRAFT_RESPONSE_SYSTEM_PROMPT), HumanMessage(content=input_message)],
+                [
+                    SystemMessage(content=DRAFT_RESPONSE_SYSTEM_PROMPT),
+                    HumanMessage(
+                        content=(
+                            f"{input_message}\n\n"
+                            "The structured draft was invalid or too shallow. Write the actual complete answer now. "
+                            "For an educational overview, explain the topic in organized sections covering what it is, "
+                            "how it works, the main concepts, an example, and limitations. Do not output schema text, "
+                            "field descriptions, or a one-sentence definition."
+                        )
+                    ),
+                ],
             ).content
         )
-        citations = []
+        citations = list(
+            dict.fromkeys(
+                str(item.get("source", "")).strip()
+                for item in sources
+                if str(item.get("source", "")).strip()
+            )
+        )[:5]
     log(f"graph.collect_informations.completed | response_chars={len(str(answer))} | citation_count={len(citations)}")
     return str(answer), citations
 
